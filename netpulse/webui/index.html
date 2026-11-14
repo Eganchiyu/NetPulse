@@ -17,6 +17,7 @@
     --op: #a855f7;
     --bridge: #f59e0b;
     --loss: #f43f5e;
+    --output: #06b6d4;
     --tap: #fbbf24;
     --accent: #38bdf8;
     --danger: #fb7185;
@@ -132,6 +133,7 @@
   .palette-item[data-cat="op"] { border-left-color: var(--op); }
   .palette-item[data-cat="bridge"] { border-left-color: var(--bridge); }
   .palette-item[data-cat="loss"] { border-left-color: var(--loss); }
+  .palette-item[data-cat="output"] { border-left-color: var(--output); }
   .palette-item small { color: var(--muted); font-size: 10px; font-family: ui-monospace, monospace; }
 
   .canvas-wrap {
@@ -200,6 +202,8 @@
   .node-card[data-cat="op"] .node-head { border-top-color: var(--op); }
   .node-card[data-cat="bridge"] .node-head { border-top-color: var(--bridge); }
   .node-card[data-cat="loss"] .node-head { border-top-color: var(--loss); }
+  .node-card[data-cat="output"] { width: 276px; }
+  .node-card[data-cat="output"] .node-head { border-top-color: var(--output); }
 
   .node-title { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .node-type {
@@ -363,6 +367,87 @@
   }
   .edge-label-bg { fill: #0d1117; stroke: #30363d; stroke-width: 1; rx: 4; }
   .edge-label-txt { fill: #9ca3af; font-size: 10px; font-family: ui-monospace, monospace; text-anchor: middle; dominant-baseline: central; }
+
+  /* 输出探针节点内嵌渲染 */
+  .node-probe {
+    padding: 6px 8px 8px;
+    background: rgba(11, 15, 20, 0.86);
+    border-top: 1px solid rgba(48, 54, 61, .75);
+    border-radius: 0 0 9px 9px;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .probe-bar {
+    display: flex; justify-content: space-between; align-items: center; gap: 6px;
+    font-size: 10px; font-family: ui-monospace, monospace; color: var(--muted);
+  }
+  .probe-tag {
+    padding: 1px 5px; border-radius: 4px; background: rgba(6, 182, 212, .14);
+    color: #22d3ee; border: 1px solid rgba(6, 182, 212, .35);
+  }
+  .probe-expand-btn {
+    padding: 1px 6px; font-size: 11px; line-height: 1.2; border-radius: 4px;
+    background: #1c222b; border: 1px solid var(--border); color: var(--text); cursor: pointer;
+  }
+  .probe-expand-btn:hover { border-color: var(--output); color: #22d3ee; }
+  .probe-canvas {
+    width: 100%; height: 146px; display: block;
+    background: #080b10; border: 1px solid #232a35; border-radius: 6px;
+    image-rendering: pixelated;
+  }
+  .probe-raw-wrap {
+    max-height: 146px; overflow: auto;
+    background: #080b10; border: 1px solid #232a35; border-radius: 6px;
+    padding: 4px; display: none;
+  }
+  .probe-raw-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 10px; font-family: ui-monospace, monospace; color: #cbd5e1;
+  }
+  .probe-raw-table td {
+    padding: 2px 4px; border: 1px solid rgba(48, 54, 61, .5); text-align: right; white-space: nowrap;
+  }
+  .probe-meta {
+    display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap;
+    font-size: 10px; font-family: ui-monospace, monospace; color: var(--muted);
+  }
+  .probe-hover {
+    font-size: 10px; font-family: ui-monospace, monospace; color: #38bdf8; min-height: 13px;
+  }
+
+  /* 探针放大弹窗 */
+  .probe-modal {
+    position: fixed; inset: 0; z-index: 80;
+    background: rgba(5, 8, 13, 0.72); backdrop-filter: blur(3px);
+    display: none; align-items: center; justify-content: center;
+  }
+  .probe-modal.open { display: flex; }
+  .probe-modal-card {
+    width: min(680px, 92vw); max-height: 88vh;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 20px 56px rgba(0, 0, 0, .75);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .probe-modal-head {
+    padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--panel-2);
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  }
+  .probe-modal-tabs { display: flex; gap: 6px; padding: 8px 14px 0; border-bottom: 1px solid var(--border); }
+  .probe-modal-tab {
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0; padding: 6px 10px; color: var(--muted); font-size: 12px;
+  }
+  .probe-modal-tab.active { color: #22d3ee; border-bottom-color: var(--output); }
+  .probe-modal-body {
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto;
+  }
+  .probe-modal-canvas {
+    width: 100%; height: 340px; background: #080b10;
+    border: 1px solid var(--border); border-radius: 8px; image-rendering: pixelated;
+  }
+  .probe-modal-raw {
+    max-height: 340px; overflow: auto; background: #080b10;
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: none;
+  }
 </style>
 </head>
 <body>
@@ -442,6 +527,7 @@
         <span><i class="legend-dot" style="background:var(--backbone)"></i>Backbone</span>
         <span><i class="legend-dot" style="background:var(--op)"></i>Op/Bridge</span>
         <span><i class="legend-dot" style="background:var(--loss)"></i>Loss</span>
+        <span><i class="legend-dot" style="background:var(--output)"></i>Output</span>
         <span><i class="legend-dot" style="background:var(--tap)"></i>Tap</span>
         <span>| 双击画布添加节点 · 拖端口圆点连线 · Del 删除选中 · Ctrl+Z 撤销</span>
       </div>
@@ -501,10 +587,45 @@
   </main>
 </div>
 
+<div id="probeModal" class="probe-modal">
+  <div class="probe-modal-card">
+    <div class="probe-modal-head">
+      <div>
+        <strong id="probeModalTitle" style="font-size:13px">Probe</strong>
+        <span id="probeModalShape" style="margin-left:8px;font-size:11px;color:var(--muted);font-family:ui-monospace,monospace">-</span>
+      </div>
+      <button id="probeModalClose">关闭 (Esc)</button>
+    </div>
+    <div class="probe-modal-tabs" id="probeModalTabs">
+      <button class="probe-modal-tab active" data-view="auto">自动</button>
+      <button class="probe-modal-tab" data-view="heatmap">热力图</button>
+      <button class="probe-modal-tab" data-view="scalar">标量曲线</button>
+      <button class="probe-modal-tab" data-view="image">图像</button>
+      <button class="probe-modal-tab" data-view="raw">原始数据</button>
+      <button class="probe-modal-tab" data-view="hist">直方图</button>
+    </div>
+    <div class="probe-modal-body">
+      <canvas id="probeModalCanvas" class="probe-modal-canvas" width="620" height="340"></canvas>
+      <div id="probeModalRaw" class="probe-modal-raw"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;font-family:ui-monospace,monospace">
+        <span id="probeModalHover" style="color:#38bdf8">悬停画布查看采样值</span>
+        <span id="probeModalStats" style="color:var(--muted)">-</span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 const NODE_W = 228;
-const CAT_ORDER = ["source", "backbone", "op", "bridge", "loss"];
-const CAT_LABELS = { source: "数据源 Source", backbone: "主干 Backbone", op: "算子 Op", bridge: "桥接 Bridge", loss: "目标 Loss" };
+const CAT_ORDER = ["source", "backbone", "op", "bridge", "loss", "output"];
+const CAT_LABELS = {
+  source: "数据源 Source",
+  backbone: "主干 Backbone",
+  op: "算子 Op",
+  bridge: "桥接 Bridge",
+  loss: "目标 Loss",
+  output: "输出工具 Output",
+};
 const PALETTE = ["#38bdf8", "#34d399", "#fbbf24", "#f472b6", "#a78bfa"];
 const $ = (id) => document.getElementById(id);
 
@@ -532,6 +653,10 @@ const state = {
   wireDrag: null,         // { srcNode, srcPort, isTap }
   ercTimer: null,
   quickPos: { x: 200, y: 200 },
+  probeHistory: {},       // { nodeId: { values: [], ema: [] } }
+  latestProbes: {},       // { nodeId: snapshot }
+  modalProbeId: null,
+  modalProbeTab: "auto",
 };
 
 function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
@@ -747,8 +872,9 @@ function getPortPos(nodeId, portName, side, isTap = false) {
     : `.ports-col.right .port-row[data-port="${portName}"][data-tap="${isTap ? "1" : "0"}"]`;
   const row = el.querySelector(selector);
   const yOffset = row ? (row.offsetTop + row.offsetHeight / 2) : 60;
+  const cardW = el.offsetWidth || NODE_W;
   return {
-    x: pos.x + (side === "left" ? 0 : NODE_W),
+    x: pos.x + (side === "left" ? 0 : cardW),
     y: pos.y + yOffset,
   };
 }
@@ -907,7 +1033,31 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
     ).join("");
 
     const shapeEntry = Object.entries(node.out_specs || {})[0];
-    const staticShape = shapeEntry ? `shape=(${shapeEntry[1].shape.join(",")})` : (errorNodes.has(node.id) ? "ERC Error" : "ready");
+    const inShapeEntry = Object.entries(node.in_specs || {})[0];
+    const staticShape = shapeEntry
+      ? `shape=(${shapeEntry[1].shape.join(",")})`
+      : (inShapeEntry ? `in=(${inShapeEntry[1].shape.join(",")})` : (errorNodes.has(node.id) ? "ERC Error" : "ready"));
+
+    const footerHtml = node.category === "output"
+      ? `
+        <div class="node-probe" data-probe-node="${node.id}">
+          <div class="probe-bar">
+            <span class="probe-tag">${node.params?.mode || node.params?.view || "probe"}</span>
+            <span class="probe-shape-txt">${staticShape}</span>
+            <button type="button" class="probe-expand-btn" title="放大查看 / 切换视图">⤢</button>
+          </div>
+          <canvas class="probe-canvas" width="256" height="146"></canvas>
+          <div class="probe-raw-wrap"></div>
+          <div class="probe-hover">等待训练输出...</div>
+          <div class="probe-meta"><span>min -</span><span>max -</span><span>μ -</span></div>
+        </div>
+      `
+      : `
+        <div class="node-live">
+          <div class="live-text">${staticShape}</div>
+          <div class="live-bar-bg"><div class="live-bar-fill"></div></div>
+        </div>
+      `;
 
     card.innerHTML = `
       <div class="node-head">
@@ -919,11 +1069,30 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
         <div class="ports-col left">${inHtml}</div>
         <div class="ports-col right">${outHtml}${tapHtml}</div>
       </div>
-      <div class="node-live">
-        <div class="live-text">${staticShape}</div>
-        <div class="live-bar-bg"><div class="live-bar-fill"></div></div>
-      </div>
+      ${footerHtml}
     `;
+
+    if (node.category === "output") {
+      const expandBtn = card.querySelector(".probe-expand-btn");
+      expandBtn.addEventListener("mousedown", (ev) => ev.stopPropagation());
+      expandBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        openProbeModal(node.id);
+      });
+      const pCanvas = card.querySelector(".probe-canvas");
+      pCanvas.addEventListener("mousemove", (ev) => handleProbeHover(ev, node.id, pCanvas, card.querySelector(".probe-hover")));
+      pCanvas.addEventListener("mouseleave", () => {
+        const hv = card.querySelector(".probe-hover");
+        if (hv) hv.textContent = state.latestProbes[node.id] ? `shape=(${state.latestProbes[node.id].shape.join(",")})` : "等待训练输出...";
+      });
+      pCanvas.addEventListener("dblclick", (ev) => {
+        ev.stopPropagation();
+        openProbeModal(node.id);
+      });
+      if (state.latestProbes[node.id]) {
+        renderProbeIntoCard(card, node.id, state.latestProbes[node.id]);
+      }
+    }
 
     card.addEventListener("mousedown", (ev) => {
       if (ev.target.closest(".port-dot")) return;
@@ -1250,7 +1419,7 @@ function renderMinimap() {
     const ry = (p.y - minY) * s;
     const rw = Math.max(6, NODE_W * s);
     const rh = Math.max(4, 100 * s);
-    const col = n.category === "source" ? "#3b82f6" : n.category === "loss" ? "#f43f5e" : n.category === "backbone" ? "#10b981" : "#a855f7";
+    const col = n.category === "source" ? "#3b82f6" : n.category === "loss" ? "#f43f5e" : n.category === "backbone" ? "#10b981" : n.category === "output" ? "#06b6d4" : "#a855f7";
     html += `<rect x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}" fill="${col}" fill-opacity="0.7" rx="1.5" />`;
   }
   const wrap = $("canvasWrap");
@@ -1330,11 +1499,328 @@ function updateNodeLiveStats(nodeStats, tapStats) {
     if (!st) continue;
     card.classList.add("active");
     setTimeout(() => card.classList.remove("active"), 180);
-    card.querySelector(".live-text").textContent = `norm=${st.norm.toFixed(2)} μ=${st.mean.toFixed(2)} σ=${st.std.toFixed(2)}`;
-    const pct = Math.min(100, Math.max(8, Math.log1p(st.norm) * 24));
-    card.querySelector(".live-bar-fill").style.width = `${pct}%`;
+    const liveText = card.querySelector(".live-text");
+    const liveBar = card.querySelector(".live-bar-fill");
+    if (liveText) liveText.textContent = `norm=${st.norm.toFixed(2)} μ=${st.mean.toFixed(2)} σ=${st.std.toFixed(2)}`;
+    if (liveBar) {
+      const pct = Math.min(100, Math.max(8, Math.log1p(st.norm) * 24));
+      liveBar.style.width = `${pct}%`;
+    }
   }
   emitEdgePulses(nodeStats, tapStats);
+}
+
+// 调色板映射 (0..255 -> [r, g, b])
+const COLORMAPS = {
+  viridis: [[68,1,84],[72,40,120],[62,73,137],[49,104,142],[38,130,142],[31,158,137],[53,183,121],[110,206,88],[181,222,43],[253,231,37]],
+  coolwarm: [[59,76,192],[98,130,234],[141,176,254],[184,208,249],[221,221,221],[245,196,173],[244,154,123],[222,96,77],[180,4,38]],
+  magma: [[0,0,4],[28,16,68],[79,18,123],[129,37,129],[181,54,122],[229,80,100],[251,135,97],[254,194,135],[252,253,191]],
+  grayscale: [[0,0,0],[255,255,255]],
+};
+
+function sampleColormap(name, v255) {
+  const stops = COLORMAPS[name] || COLORMAPS.viridis;
+  const t = Math.max(0, Math.min(1, v255 / 255));
+  const scaled = t * (stops.length - 1);
+  const idx = Math.min(stops.length - 2, Math.floor(scaled));
+  const frac = scaled - idx;
+  const c0 = stops[idx], c1 = stops[idx + 1];
+  return [
+    Math.round(c0[0] + (c1[0] - c0[0]) * frac),
+    Math.round(c0[1] + (c1[1] - c0[1]) * frac),
+    Math.round(c0[2] + (c1[2] - c0[2]) * frac),
+  ];
+}
+
+function drawHeatmapCanvas(canvas, heatmap) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!heatmap || !heatmap.rows || !heatmap.cols) return;
+
+  const { rows, cols, data, colormap, vmin, vmax } = heatmap;
+  const off = document.createElement("canvas");
+  off.width = cols;
+  off.height = rows;
+  const octx = off.getContext("2d");
+  const img = octx.createImageData(cols, rows);
+  for (let i = 0; i < data.length; i++) {
+    const [r, g, b] = sampleColormap(colormap, data[i]);
+    const p = i * 4;
+    img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b; img.data[p + 3] = 255;
+  }
+  octx.putImageData(img, 0, 0);
+
+  const barH = 16;
+  const plotH = H - barH - 4;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, 0, 0, W, plotH);
+
+  // 底部色标条
+  const grad = ctx.createLinearGradient(6, 0, W - 6, 0);
+  const stops = COLORMAPS[colormap] || COLORMAPS.viridis;
+  stops.forEach((rgb, idx) => grad.addColorStop(idx / (stops.length - 1), `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`));
+  ctx.fillStyle = grad;
+  ctx.fillRect(6, plotH + 3, W - 12, 5);
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "9px ui-monospace, monospace";
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  ctx.fillText(vmin.toFixed(2), 6, plotH + 9);
+  ctx.textAlign = "right";
+  ctx.fillText(vmax.toFixed(2), W - 6, plotH + 9);
+  canvas._heatMeta = { rows, cols, data, vmin, vmax, plotH };
+}
+
+function drawScalarCanvas(canvas, probe, histObj) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  canvas._heatMeta = null;
+
+  const vals = histObj?.values || [];
+  const emas = histObj?.ema || [];
+  if (!vals.length) return;
+
+  let minY = Math.min(...vals), maxY = Math.max(...vals);
+  if (minY === maxY) { minY -= 0.5; maxY += 0.5; }
+  const pad = (maxY - minY) * 0.1;
+  minY -= pad; maxY += pad;
+
+  const mL = 8, mR = 8, mT = 26, mB = 14;
+  const pw = W - mL - mR, ph = H - mT - mB;
+  ctx.strokeStyle = "#1e293b";
+  ctx.lineWidth = 1;
+  for (let g = 0; g <= 2; g++) {
+    const gy = mT + (ph * g) / 2;
+    ctx.beginPath(); ctx.moveTo(mL, gy); ctx.lineTo(W - mR, gy); ctx.stroke();
+  }
+
+  const mapX = (i) => vals.length === 1 ? mL + pw / 2 : mL + (i / (vals.length - 1)) * pw;
+  const mapY = (v) => mT + ph - ((v - minY) / Math.max(1e-8, maxY - minY)) * ph;
+
+  ctx.strokeStyle = "#22d3ee";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  vals.forEach((v, i) => {
+    const x = mapX(i), y = mapY(v);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  if (emas.length >= 2 && (probe.ema_alpha || 0) > 0) {
+    ctx.save();
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = "#fbbf24";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    emas.forEach((v, i) => {
+      const x = mapX(i), y = mapY(v);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "bold 14px ui-monospace, monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(Number(probe.scalar).toFixed(4), 8, 5);
+
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "10px ui-monospace, monospace";
+  ctx.textAlign = "right";
+  ctx.fillText(`${probe.reduce || "val"} · n=${vals.length}`, W - 8, 7);
+}
+
+function drawImagesCanvas(canvas, images) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  canvas._heatMeta = null;
+  if (!images || !images.samples || !images.samples.length) return;
+
+  const { count, channels, height, width, samples } = images;
+  const cols = count === 1 ? 1 : 2;
+  const rows = Math.ceil(count / cols);
+  const gap = 4;
+  const cellW = Math.floor((W - gap * (cols + 1)) / cols);
+  const cellH = Math.floor((H - gap * (rows + 1)) / rows);
+  ctx.imageSmoothingEnabled = false;
+
+  samples.forEach((flat, idx) => {
+    const off = document.createElement("canvas");
+    off.width = width;
+    off.height = height;
+    const octx = off.getContext("2d");
+    const img = octx.createImageData(width, height);
+    for (let i = 0; i < width * height; i++) {
+      const p = i * 4;
+      if (channels === 3) {
+        img.data[p] = flat[i * 3]; img.data[p + 1] = flat[i * 3 + 1]; img.data[p + 2] = flat[i * 3 + 2];
+      } else {
+        const v = flat[i];
+        img.data[p] = v; img.data[p + 1] = v; img.data[p + 2] = v;
+      }
+      img.data[p + 3] = 255;
+    }
+    octx.putImageData(img, 0, 0);
+    const gx = idx % cols, gy = Math.floor(idx / cols);
+    const scale = Math.min(cellW / width, cellH / height);
+    const dw = Math.max(1, Math.floor(width * scale));
+    const dh = Math.max(1, Math.floor(height * scale));
+    const dx = gap + gx * (cellW + gap) + Math.floor((cellW - dw) / 2);
+    const dy = gap + gy * (cellH + gap) + Math.floor((cellH - dh) / 2);
+    ctx.drawImage(off, dx, dy, dw, dh);
+  });
+}
+
+function drawHistogramCanvas(canvas, hist) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  canvas._heatMeta = null;
+  if (!hist || !hist.counts || !hist.counts.length) return;
+  const counts = hist.counts;
+  const maxC = Math.max(1, ...counts);
+  const mL = 8, mR = 8, mT = 10, mB = 18;
+  const bw = (W - mL - mR) / counts.length;
+  const ph = H - mT - mB;
+  counts.forEach((c, idx) => {
+    const bh = (c / maxC) * ph;
+    ctx.fillStyle = "#06b6d4";
+    ctx.fillRect(mL + idx * bw + 1, mT + ph - bh, Math.max(2, bw - 2), bh);
+  });
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "9px ui-monospace, monospace";
+  ctx.textBaseline = "bottom";
+  ctx.textAlign = "left";
+  ctx.fillText(hist.vmin.toFixed(3), 6, H - 2);
+  ctx.textAlign = "right";
+  ctx.fillText(hist.vmax.toFixed(3), W - 6, H - 2);
+}
+
+function renderRawTableHtml(raw) {
+  if (!raw || !raw.values || !raw.values.length) return `<div style="color:var(--muted);font-size:11px">无数据</div>`;
+  const rowsHtml = raw.values.map((row) =>
+    `<tr>${row.map((v) => `<td>${v}</td>`).join("")}</tr>`
+  ).join("");
+  return `<div style="font-size:10px;color:var(--muted);margin-bottom:3px;font-family:ui-monospace,monospace">显示 ${raw.rows}×${raw.cols} / 原始 ${raw.total_rows}×${raw.total_cols}</div><table class="probe-raw-table">${rowsHtml}</table>`;
+}
+
+function renderProbeIntoTarget(canvas, rawWrap, probe, histObj, forcedView) {
+  let view = forcedView && forcedView !== "auto" ? forcedView : probe.view;
+  if (view === "image" && !probe.images) view = "heatmap";
+
+  if (view === "raw") {
+    canvas.style.display = "none";
+    rawWrap.style.display = "block";
+    rawWrap.innerHTML = renderRawTableHtml(probe.raw);
+  } else {
+    canvas.style.display = "block";
+    rawWrap.style.display = "none";
+    if (view === "scalar") drawScalarCanvas(canvas, probe, histObj);
+    else if (view === "image") drawImagesCanvas(canvas, probe.images);
+    else if (view === "hist") drawHistogramCanvas(canvas, probe.hist);
+    else drawHeatmapCanvas(canvas, probe.heatmap);
+  }
+}
+
+function renderProbeIntoCard(card, nid, probe) {
+  const probeBox = card.querySelector(".node-probe");
+  if (!probeBox || !probe) return;
+  const tag = probeBox.querySelector(".probe-tag");
+  const shapeTxt = probeBox.querySelector(".probe-shape-txt");
+  const meta = probeBox.querySelector(".probe-meta");
+  const canvas = probeBox.querySelector(".probe-canvas");
+  const rawWrap = probeBox.querySelector(".probe-raw-wrap");
+  if (tag) tag.textContent = probe.view;
+  if (shapeTxt) shapeTxt.textContent = `(${probe.shape.join(",")}) ${probe.dtype}`;
+  if (meta && probe.stats) {
+    meta.innerHTML = `<span>min ${probe.stats.min.toFixed(2)}</span><span>max ${probe.stats.max.toFixed(2)}</span><span>μ ${probe.stats.mean.toFixed(2)}</span>`;
+  }
+  renderProbeIntoTarget(canvas, rawWrap, probe, state.probeHistory[nid], "auto");
+}
+
+function handleProbeHover(ev, nid, canvas, hoverEl) {
+  const hm = canvas._heatMeta;
+  if (!hm || !hoverEl) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (ev.clientX - rect.left) * (canvas.width / Math.max(1, rect.width));
+  const y = (ev.clientY - rect.top) * (canvas.height / Math.max(1, rect.height));
+  if (y < 0 || y >= hm.plotH) return;
+  const c = Math.max(0, Math.min(hm.cols - 1, Math.floor((x / canvas.width) * hm.cols)));
+  const r = Math.max(0, Math.min(hm.rows - 1, Math.floor((y / hm.plotH) * hm.rows)));
+  const q = hm.data[r * hm.cols + c];
+  const val = hm.vmin + (q / 255) * (hm.vmax - hm.vmin);
+  hoverEl.textContent = `[${r}, ${c}] ≈ ${val.toFixed(4)}`;
+}
+
+function openProbeModal(nid) {
+  state.modalProbeId = nid;
+  state.modalProbeTab = "auto";
+  $("probeModalTabs").querySelectorAll(".probe-modal-tab").forEach((b) => {
+    b.classList.toggle("active", b.dataset.view === "auto");
+  });
+  $("probeModal").classList.add("open");
+  refreshProbeModal();
+}
+
+function closeProbeModal() {
+  state.modalProbeId = null;
+  $("probeModal").classList.remove("open");
+}
+
+function refreshProbeModal() {
+  if (!state.modalProbeId) return;
+  const nid = state.modalProbeId;
+  const probe = state.latestProbes[nid];
+  $("probeModalTitle").textContent = `输出监视器 · ${nid}`;
+  if (!probe) {
+    $("probeModalShape").textContent = "等待训练数据...";
+    $("probeModalStats").textContent = "-";
+    return;
+  }
+  $("probeModalShape").textContent = `shape=(${probe.shape.join(",")}) · ${probe.dtype} · layout=${probe.layout}`;
+  const st = probe.stats;
+  $("probeModalStats").textContent = `min=${st.min}  max=${st.max}  mean=${st.mean}  std=${st.std}  norm=${st.norm}`;
+  renderProbeIntoTarget(
+    $("probeModalCanvas"),
+    $("probeModalRaw"),
+    probe,
+    state.probeHistory[nid],
+    state.modalProbeTab,
+  );
+}
+
+function updateProbes(probes) {
+  if (!probes) return;
+  for (const [nid, snap] of Object.entries(probes)) {
+    state.latestProbes[nid] = snap;
+    let ph = state.probeHistory[nid];
+    if (!ph) {
+      ph = { values: [], ema: [] };
+      state.probeHistory[nid] = ph;
+    }
+    const val = Number(snap.scalar ?? 0);
+    ph.values.push(val);
+    const alpha = Number(snap.ema_alpha ?? 0.1);
+    const prevEma = ph.ema.length ? ph.ema[ph.ema.length - 1] : val;
+    ph.ema.push(alpha > 0 ? prevEma * (1 - alpha) + val * alpha : val);
+    const maxLen = Math.max(20, Number(snap.history_len ?? 120));
+    if (ph.values.length > maxLen) { ph.values.shift(); ph.ema.shift(); }
+
+    const card = state.nodeEls[nid];
+    if (card) {
+      card.classList.add("active");
+      setTimeout(() => card.classList.remove("active"), 180);
+      renderProbeIntoCard(card, nid, snap);
+    }
+  }
+  if (state.modalProbeId && probes[state.modalProbeId]) {
+    refreshProbeModal();
+  }
 }
 
 function renderLossItems(lossDict) {
@@ -1472,6 +1958,7 @@ function connectWS() {
     const msg = JSON.parse(ev.data);
     if (msg.type === "train_started") {
       state.history = []; state.lossSeries = {};
+      state.probeHistory = {}; state.latestProbes = {};
       $("kpiVal").textContent = "-";
       setTrainButtons(true, false);
     } else if (msg.type === "step") {
@@ -1484,6 +1971,7 @@ function connectWS() {
       for (const k of Object.keys(msg.loss_dict || {})) state.lossSeries[k] = true;
       renderLossChart();
       updateNodeLiveStats(msg.node_stats, msg.tap_stats);
+      updateProbes(msg.probes);
     } else if (msg.type === "eval") {
       const accStr = msg.val_acc !== null ? `${(msg.val_acc * 100).toFixed(1)}%` : "-";
       $("kpiVal").textContent = `${accStr} / ${msg.val_loss.toFixed(3)}`;
@@ -1592,7 +2080,7 @@ wrap.addEventListener("wheel", (ev) => {
 window.addEventListener("keydown", (ev) => {
   const tag = document.activeElement?.tagName;
   const editing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-  if (ev.key === "Escape") { closeQuickSearch(); return; }
+  if (ev.key === "Escape") { closeQuickSearch(); closeProbeModal(); return; }
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
     ev.preventDefault();
     if (state.currentFile) saveGraph(state.currentFile);
@@ -1688,6 +2176,24 @@ $("pauseBtn").addEventListener("click", async () => {
 $("stopBtn").addEventListener("click", async () => {
   await fetch("/api/train/stop", { method: "POST" });
   setTrainButtons(false, false);
+});
+
+$("probeModalClose").addEventListener("click", closeProbeModal);
+$("probeModal").addEventListener("click", (ev) => {
+  if (ev.target === $("probeModal")) closeProbeModal();
+});
+$("probeModalTabs").addEventListener("click", (ev) => {
+  const btn = ev.target.closest(".probe-modal-tab");
+  if (!btn) return;
+  state.modalProbeTab = btn.dataset.view;
+  $("probeModalTabs").querySelectorAll(".probe-modal-tab").forEach((b) => {
+    b.classList.toggle("active", b === btn);
+  });
+  refreshProbeModal();
+});
+$("probeModalCanvas").addEventListener("mousemove", (ev) => {
+  if (!state.modalProbeId) return;
+  handleProbeHover(ev, state.modalProbeId, $("probeModalCanvas"), $("probeModalHover"));
 });
 
 initApp();

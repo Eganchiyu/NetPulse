@@ -113,16 +113,32 @@ class CompiledGraph(nn.Module):
 
             # 组装当前节点输入
             node_inputs: dict[str, Signal] = {}
+            missing_input = False
             for edge in self._incoming_edges[nid]:
                 if edge.edge_kind == "tap":
-                    sig = tap_bus[f"{edge.src_node}.{edge.src_port}"]
+                    key = f"{edge.src_node}.{edge.src_port}"
+                    if key not in tap_bus:
+                        missing_input = True
+                        break
+                    sig = tap_bus[key]
                 else:
-                    sig = outputs[edge.src_node][edge.src_port]
+                    src_out = outputs.get(edge.src_node)
+                    if src_out is None or edge.src_port not in src_out:
+                        missing_input = True
+                        break
+                    sig = src_out[edge.src_port]
 
                 if edge.id in self.bridges_mod:
                     sig = self.bridges_mod[edge.id](sig)
 
                 node_inputs[edge.dst_port] = sig
+
+            if cat == "output":
+                if missing_input:
+                    continue
+                with torch.no_grad():
+                    outputs[nid] = mod(node_inputs)
+                continue
 
             used_taps = self._used_taps_by_node.get(nid)
             if used_taps and hasattr(mod, "forward_with_taps"):

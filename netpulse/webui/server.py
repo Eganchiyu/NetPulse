@@ -121,6 +121,10 @@ def serialize_graph_ir(
             except Exception:
                 sig = None
 
+        in_specs = {
+            k: {"shape": list(v.shape), "layout": v.layout}
+            for k, v in erc.node_in_specs.get(node.id, {}).items()
+        }
         out_specs = {
             k: {"shape": list(v.shape), "layout": v.layout}
             for k, v in erc.node_out_specs.get(node.id, {}).items()
@@ -139,6 +143,7 @@ def serialize_graph_ir(
             "inputs": [p.name for p in sig.inputs] if sig else [],
             "outputs": [p.name for p in sig.outputs] if sig else [],
             "taps": [t.name for t in sig.taps] if sig else [],
+            "in_specs": in_specs,
             "out_specs": out_specs,
             "tap_specs": tap_specs,
         })

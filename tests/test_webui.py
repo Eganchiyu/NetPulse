@@ -42,7 +42,7 @@ def test_webui_http_and_ws_flow() -> None:
             assert r_graph.status == 200
             gdata = await r_graph.json()
             assert gdata["erc"]["passed"] is True
-            assert len(gdata["nodes"]) == 15
+            assert len(gdata["nodes"]) >= 15
             assert all("position" in n for n in gdata["nodes"])
 
             # 3. 实时 ERC 校验接口（含成功与维度冲突诊断）

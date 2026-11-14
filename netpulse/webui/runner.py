@@ -177,6 +177,16 @@ class LiveTrainRunner:
                         for tkey, tsig in out.tap_bus.items():
                             tap_stats[tkey] = _tensor_summary(tsig.data)
 
+                        probes: dict[str, Any] = {}
+                        for nid, cat in compiled.categories.items():
+                            if cat == "output":
+                                mod = compiled.nodes_mod[nid]
+                                cap = getattr(mod, "capture_snapshot", None)
+                                if callable(cap):
+                                    snap = cap()
+                                    if snap is not None:
+                                        probes[nid] = snap
+
                         loss_dict = {k: round(float(v.item()), 5) for k, v in out.loss_dict.items()}
                         acc_pair = _extract_acc(compiled, out.outputs, batch, source_id)
                         batch_acc = round(acc_pair[0] / acc_pair[1], 4) if acc_pair else None
@@ -192,6 +202,7 @@ class LiveTrainRunner:
                             "batch_acc": batch_acc,
                             "node_stats": node_stats,
                             "tap_stats": tap_stats,
+                            "probes": probes,
                             "step_delay_ms": self.step_delay_ms,
                         })
 

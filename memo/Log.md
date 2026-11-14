@@ -43,3 +43,9 @@
 
 ## 2026-11-14（文档与 README 启动说明同步）
 - 同步更新 `README.md`、`docs/design.md` 与 `docs/ARCHITECTURE.md`，补充交互式 WebUI、元件 Schema 协议与完整 CLI/WebUI 启动命令。
+
+## 2026-11-14（输出监视工具节点与内嵌可视化）
+- 协议与编译器适配：`netpulse/core/types.py`、`compiler.py` 新增 `"output"` 类别与 `"any"` 端口类型；`CompiledGraph` 对 `output` 节点以 `torch.no_grad()` 零梯度旁路执行（上游 `loss` 跳过时安全跳过）。
+- 新增输出工具元件库（`netpulse/components/outputs.py`，并在 `__init__.py` 注册）：`monitor`（通用自适应监视器）、`scalar_watch`（标量数值与 EMA 曲线）、`heatmap_preview`（2D/特征图多色标热力图）、`tensor_peek`（原始浮点切片表格、16-bin 直方图与 4D 图像网格预览）。
+- WebUI 遥测与前端渲染：`runner.py` 节流推送 `probes` 快照，`server.py` 补充 `in_specs`；`index.html` 支持在画布节点卡片内直接绘制 Canvas 曲线/热力图/图像与原始数据表，支持悬停读数与点击 `⤢` 放大弹窗切换视图。
+- 验证通过：`pytest tests -v` 16/16 全部通过，`node --check` 前端脚本语法无误。

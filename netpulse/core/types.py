@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
 import torch
 
-PortKind = Literal["tensor", "loss", "data_batch"]
-CategoryKind = Literal["source", "backbone", "op", "bridge", "loss"]
+PortKind = Literal["tensor", "loss", "data_batch", "any"]
+CategoryKind = Literal["source", "backbone", "op", "bridge", "loss", "output"]
 ParamType = Literal["int", "float", "bool", "string", "select", "json"]
 
 
