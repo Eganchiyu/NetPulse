@@ -40,3 +40,6 @@
 - WebUI 后端适配（`netpulse/webui/server.py`）：新增 `/api/components`、`/api/erc/check`（内存图实时 ERC 校验与自动排布）、`/api/graph/save`（含路径穿越防护）、支持直接传入内存 `GraphIR` 启动训练，并加入借鉴自 ComfyUI 的本地环回防跨站中间件与 `web.AppKey` 规范。
 - WebUI 前端升级（`netpulse/webui/index.html`）：新增左侧可折叠元件库面板、双击画布快速搜索建点、端口拖拽实时连线（含 Tap 虚线）、动态参数表单检查器（Inspector）、节点/连线删除与 `AutoBridge` 切换、撤销/重做（`Ctrl+Z/Y`）、自动排版、保存/另存为与右下角 Minimap。
 - 验证通过：`pytest tests -v` 13/13 全部通过。
+
+## 2026-11-14（文档与 README 启动说明同步）
+- 同步更新 `README.md`、`docs/design.md` 与 `docs/ARCHITECTURE.md`，补充交互式 WebUI、元件 Schema 协议与完整 CLI/WebUI 启动命令。

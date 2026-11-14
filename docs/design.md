@@ -136,10 +136,11 @@ class Signal:
   - `python -m netpulse.cli list`：列出已注册元件。
   - `python -m netpulse.cli check <graph.json>`：执行 ERC 静态检查与 Meta 形状推导。
   - `python -m netpulse.cli train <graph.json> [--save out.pt]`：编译、训练并导出权重快照。
-  - `python -m netpulse.cli serve [--host 127.0.0.1] [--port 8765]`：启动外挂 WebUI。
-- **外挂 WebUI（`aiohttp` + 原生 WebSocket + 单文件 HTML/SVG/JS）**：
-  - 自动根据拓扑层级排布节点画布，支持节点拖拽、画布平移/缩放、ERC 状态与推导维度展示、Tap 虚线抽头与 AutoBridge 标注。
-  - 集成 `LiveTrainRunner` 后台训练控制器：支持开始/暂停/继续/停止、运行时动态调整步进延迟（0~800ms+ 慢动作看数据流）、连线脉冲动画、节点激活 `norm/mean/std` 实时状态条与分项 Loss 曲线。
+  - `python -m netpulse.cli serve [--host 127.0.0.1] [--port 8765] [--graphs-dir examples]`：启动外挂交互式 WebUI。
+- **外挂交互式 WebUI（`aiohttp` + 原生 WebSocket + 单文件 HTML/SVG/JS）**：
+  - **组件元数据协议（`/api/components`）**：基于 `BaseComponent.param_schema()` 与 `ComponentRegistry.describe_all()` 向前端提供全量元件参数 Schema、端口定义与分类。
+  - **交互式画布编排**：左侧可折叠元件库 + 双击画布快速搜索建点、端口拖拽连线（含 Tap 虚线与 `AutoBridge` 策略切换）、属性检查器（Inspector）动态参数表单、撤销/重做栈、Minimap 小地图与安全写盘（`/api/graph/save`）。
+  - **实时 ERC 预检与训练遥测**：每次连线或改参触发 `POST /api/erc/check` 即时高亮报错节点与推导维度；支持直接传入未保存的内存 `GraphIR` 启动 `LiveTrainRunner` 训练，动态调节步进延迟（0~800ms+）、观察连线脉冲动画、节点激活 `norm/mean/std` 与分项 Loss 曲线。
 
 ---
 
@@ -149,11 +150,11 @@ class Signal:
 - 核心协议、ERC（Meta 推导 + AutoBridge）、`GraphCompiler`、`Trainer`、CLI、`plugins/` 热加载已落地。
 - 17 个双粒度内置元件与统一初始化器已实现。
 - 三个端到端示例已跑通：`spiral_quickstart.json`（val_acc=1.0000）、`mnist_tap_reg.json`（val_acc=0.9160）、`mnist_atomic.json`（val_acc=0.9629）。
-- 外挂只读/训练观察型 WebUI 已落地并通过 HTTP/WebSocket 测试。
 
-### Phase 1：序列/生成扩展与在线流式数据源
+### Phase 1：交互式画布编辑与元件 Schema（✅ 已完成）
+- 完成 `ParamSpec` 参数契约、`ComponentRegistry.describe_all()` 元数据导出及单插件错误隔离加载。
+- 完成交互式 WebUI 编辑器：元件库面板/快速搜索建点、端口拖拽连线、实时 `/api/erc/check` 预检、属性编辑表单、撤销/重做、Minimap、`/api/graph/save` 落盘与直接训练内存计算图。
+
+### Phase 2：序列/生成扩展与在线流式数据源
 - 完善 `Signal.mask` 透传机制，新增 `TransformerBlock`（Causal/Padding Mask 变体）、`LSTMBlock`、基础 `DiffusionSchedule` 与噪声预测分支。
 - 完善训练期 Tensor 统计探针（激活分布、梯度范数导出）与本地 CSV/Text/ImageFolder、HF `datasets`（`streaming=True`）/ModelScope 流式数据源适配器。
-
-### Phase 2：交互式画布编辑
-- 将当前外挂观察型 WebUI 升级为可交互编排画布（拖拽增删元件、连线实时触发 ERC 预检、一键插入 AutoBridge、导出/保存 GraphIR）。

@@ -19,44 +19,64 @@
   - **宏模块 (`backbone`)**：`cnn_block`、`mlp_block`。
   - **算子与桥接 (`op`/`bridge`)**：`flatten`、`global_avg_pool`、`matrix_bridge`、`tensor_add`。
   - **目标 (`loss`)**：`cross_entropy_loss`、`activation_reg_loss`。
-  - 支持在 `plugins/*.py` 中通过 `@register_component` 热加载自定义元件。
-- **外挂可视化 WebUI**：基于 `aiohttp` + WebSocket 的轻量画布，支持查看拓扑连线与 ERC 推导维度、启停训练、动态调节步进延迟（慢放观察张量流动脉冲）与实时分项 Loss 曲线。
+  - 支持在 `plugins/*.py` 或 `plugins/*/__init__.py` 中通过 `@register_component` 热加载自定义元件（支持单插件错误隔离）。
+- **外挂交互式 WebUI**：基于 `aiohttp` + WebSocket 的零构建单页节点编辑 IDE，支持元件库拖放/双击画布快速建点、端口拖拽连线与实时 ERC/AutoBridge 校验、动态参数表单编辑、撤销重做、保存/另存为、Minimap 小地图、动态调节步进延迟观察张量流动脉冲与实时分项 Loss 曲线。
 
 ## 目录结构
 
 ```text
 netpulse/
-├── core/           # Signal / PortSpec / GraphIR / Registry / ERC / GraphCompiler / Trainer
-├── components/     # 内置双粒度元件库与统一初始化工具
-├── webui/          # 外挂可视化服务端 (aiohttp + WS) 与单文件前端
+├── core/           # Signal / PortSpec / ParamSpec / GraphIR / Registry / ERC / GraphCompiler / Trainer
+├── components/     # 内置双粒度元件库（含参数 Schema）与统一初始化工具
+├── webui/          # 外挂可视化与交互编辑服务端 (aiohttp + WS) 与单文件前端
 └── cli.py          # 命令行入口 (list / check / train / serve)
 examples/           # 示例计算图 (spiral_quickstart / mnist_tap_reg / mnist_atomic)
 tests/              # 单元测试与端到端训练 / WebUI 测试
-docs/design.md      # 架构设计文档
+docs/               # 架构设计文档 (design.md) 与系统交接文档 (ARCHITECTURE.md)
 ```
 
-## 快速开始
+## 快速开始与启动方法
 
 依赖：`Python >= 3.10`、`torch`、`pydantic`、`pyyaml`、`aiohttp`、`pytest`（测试）。
+> 在本机开发环境中，请直接使用包含全部依赖的 Python 解释器：`~/miniconda3/envs/yuki/bin/python`（下同，若已激活目标虚拟环境可简写为 `python`）。
+
+### 1. 启动交互式 WebUI（推荐）
 
 ```bash
-# 1. 列出已注册元件
-python -m netpulse.cli list
-
-# 2. 执行 ERC 静态检查与 Meta 形状推导
-python -m netpulse.cli check examples/mnist_atomic.json
-
-# 3. 编译并运行训练闭环（支持导出 .pt 权重）
-python -m netpulse.cli train examples/mnist_atomic.json --save .cache/mnist_atomic.pt
-
-# 4. 启动外挂 WebUI 可视化界面
-python -m netpulse.cli serve --host 127.0.0.1 --port 8765
+~/miniconda3/envs/yuki/bin/python -m netpulse.cli serve --host 127.0.0.1 --port 8765
 ```
 
-运行全部测试：
+启动后在浏览器打开：**`http://127.0.0.1:8765`**
+
+常用参数：
+- `--host`：监听地址（默认 `127.0.0.1`）
+- `--port`：监听端口（默认 `8765`）
+- `--graphs-dir`：计算图目录，保存与加载均限定在该目录下（默认 `examples`）
+- `--plugins`：自定义插件目录（默认 `plugins`）
+
+WebUI 常用操作：
+- **添加节点**：从左侧元件库点击/拖入画布，或**双击画布空白处**打开快速搜索框回车创建。
+- **拖拽连线**：从右侧 `output` 或金色 `tap` 端口圆点按住拖至目标节点左侧 `input` 端口释放，连线时自动触发 ERC 静态校验与 AutoBridge 推导。
+- **编辑参数与连接**：点击节点/连线在右侧 **属性编辑** 面板修改参数、权重或 `AutoBridge` 策略；支持 `Delete/Backspace` 删除选中项、`Ctrl+Z`/`Ctrl+Y` 撤销重做、`Ctrl+S` 保存。
+- **直接训练未保存图**：编辑后无需先落盘，点击 **开始训练** 即可直接提交当前画布图运行，并在 **训练遥测 & ERC** 面板实时调速观察 Loss 曲线与张量脉冲。
+
+### 2. CLI 检查与训练命令
 
 ```bash
-python -m pytest -v
+# 列出已注册元件
+~/miniconda3/envs/yuki/bin/python -m netpulse.cli list
+
+# 执行 ERC 静态检查与 Meta 形状推导
+~/miniconda3/envs/yuki/bin/python -m netpulse.cli check examples/mnist_atomic.json
+
+# 编译并运行训练闭环（支持导出 .pt 权重）
+~/miniconda3/envs/yuki/bin/python -m netpulse.cli train examples/mnist_atomic.json --save .cache/mnist_atomic.pt
+```
+
+### 3. 运行测试
+
+```bash
+~/miniconda3/envs/yuki/bin/python -m pytest tests -v
 ```
 
 ## 开源协议

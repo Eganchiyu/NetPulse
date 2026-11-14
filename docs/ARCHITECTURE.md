@@ -44,10 +44,10 @@ netpulse/
 │   ├── __init__.py                  # 公共 API 导出
 │   ├── cli.py                       # CLI 主入口: list, check, train, serve
 │   ├── core/
-│   │   ├── types.py                 # Signal, PortSpec, TapSpec, ComponentSignature, ResolvedSpec, Diagnostic, GraphOutput
-│   │   ├── ir.py                    # Pydantic v2 图结构模型与 JSON/YAML 加载
-│   │   ├── component.py             # BaseComponent 抽象基类
-│   │   ├── registry.py              # 注册表与 plugins/*.py 动态插件加载
+│   │   ├── types.py                 # Signal, PortSpec, TapSpec, ParamSpec, ComponentSignature, ResolvedSpec, Diagnostic, GraphOutput
+│   │   ├── ir.py                    # Pydantic v2 图结构模型与 JSON/YAML 加载/保存 (to_file)
+│   │   ├── component.py             # BaseComponent 抽象基类（含 param_schema / display_name / description）
+│   │   ├── registry.py              # 注册表、describe_all() 元数据导出与 plugins 错误隔离加载
 │   │   ├── erc.py                   # ERC 静态检查、Meta 形状推导与 AutoBridgePlan
 │   │   ├── compiler.py              # CompiledGraph(nn.Module)、_AutoBridgeModule 与 GraphCompiler
 │   │   └── trainer.py               # Trainer、优化器构建、批次转换、准确率追踪与 checkpoint 保存
@@ -62,8 +62,8 @@ netpulse/
 │   └── webui/
 │       ├── __init__.py
 │       ├── runner.py                # LiveTrainRunner: 后台调速训练线程与逐节点统计采集
-│       ├── server.py                # aiohttp HTTP + WebSocket 服务端与拓扑分层自动布局
-│       └── index.html               # 无构建单页可视化画布、粒子数据流与 SVG Loss 曲线
+│       ├── server.py                # aiohttp HTTP + WebSocket 服务端（/api/components, /api/erc/check, /api/graph/save 等）
+│       └── index.html               # 零构建交互式节点编辑 IDE、动态参数表单、Minimap、粒子数据流与 SVG Loss 曲线
 ├── examples/
 │   ├── spiral_quickstart.json       # 4 节点极速合成螺旋集闭环
 │   ├── mnist_tap_reg.json           # CNNBlock + Hook Tap + MatrixBridge + 正交正则闭环
@@ -113,11 +113,14 @@ netpulse/
    - `category == "loss"`：在 `compute_losses=True`（默认 `mode == "train"`）时执行并写入 `loss_dict[nid]`；`mode in ("eval", "infer")` 默认跳过。
 2. `total_loss` 根据 `GraphIR.losses` 中的 `weight` 与 `enabled` 汇总，供原生 `total_loss.backward()` 反传。
 
-### 3.3 外挂 WebUI 数据流（`netpulse/webui/`）
+### 3.3 外挂交互式 WebUI 数据流（`netpulse/webui/`）
 
-- **前端初始化**：请求 `/api/graphs` 和 `/api/graph?name=...`，服务端运行 `run_erc` 并通过 `_compute_auto_layout` 计算分层坐标，前端渲染节点卡片、端口引脚、贝塞尔连线与静态形状标签。
+- **前端初始化与元件协议**：请求 `/api/components`（导出全量元件 `ParamSpec`、端口定义与分类）、`/api/graphs` 和 `/api/graph?name=...`，服务端运行 `run_erc` 并通过 `_compute_auto_layout` 计算分层坐标，前端渲染节点卡片、端口引脚、贝塞尔连线与静态形状标签。
+- **交互式编辑与实时 ERC 预检**：
+  - 前端在内存中维护 `draftGraph` 与撤销/重做栈；每次增删节点、拖拽端口连线、修改参数或切换 `AutoBridge` 时防抖调用 `POST /api/erc/check`（`serialize_graph_ir`），实时高亮 ERC 错误节点/边并刷新形状标注。
+  - `POST /api/graph/save` 经文件名安全校验后将 `GraphIR` 写回 `graphs_dir`；所有本地环回请求均受 `_create_origin_only_middleware()` 跨站校验保护。
 - **实时训练与调速**：
-  - `POST /api/train/start` 启动 `LiveTrainRunner` 后台线程。
+  - `POST /api/train/start` 支持读取磁盘文件或直接接收画布当前的内存 `graph` JSON 启动 `LiveTrainRunner` 后台线程。
   - 每步前向/反传后提取各节点输出及 Tap 的 `shape`、`mean`、`std`、`norm`，经线程安全 `asyncio.Queue` 投递至 `_broadcaster` 任务推送到 `/ws`。
   - `POST /api/train/speed` 在训练途中实时修改 `runner.step_delay_ms`（0~3000ms）与 `paused` 状态，实现“全速训练”与“慢放观察张量流动”自由切换。
 
@@ -128,7 +131,7 @@ netpulse/
 1. **Python 运行环境**：当前开发主机使用 `~/miniconda3/envs/yuki/bin/python`（含 `torch 2.13.0+cpu`、`pydantic`、`pyyaml`、`aiohttp`、`pytest`）。
 2. **Meta 初始化安全**：在 `init_utils.apply_init()` 中必须保留 `device.type != "meta"` 判断；新增带权重初始化的元件时应复用 `apply_init()`，避免在 Meta 推导期触发非法 tensor 写入。
 3. **无 torchvision 依赖原则**：`MNISTData` 通过标准库 `urllib` + `gzip` + `struct` 直接解析 idx-ubyte 缓存至 `.cache/mnist`，保证核心运行时极简。
-4. **自定义元件规范**：在 `plugins/*.py` 中继承 `BaseComponent`，使用 `@register_component("<type_id>")` 装饰；`declare_ports(params)` 只能依赖 `params`，不得依赖输入张量维度；`build(params, in_specs)` 根据 `in_specs` 构建 `nn.Module`，输入/输出统一为 `dict[str, Signal]`。
+4. **自定义元件规范**：在 `plugins/*.py` 或 `plugins/*/__init__.py` 中继承 `BaseComponent`，使用 `@register_component("<type_id>")` 装饰；`declare_ports(params)` 只能依赖 `params`，不得依赖输入张量维度；可选覆盖 `param_schema()`、`display_name`、`description` 供 WebUI 表单渲染；`build(params, in_specs)` 根据 `in_specs` 构建 `nn.Module`，输入/输出统一为 `dict[str, Signal]`。
 5. **验收命令**：
-   - 全量测试：`~/miniconda3/envs/yuki/bin/python -m pytest -v`（当前 11 项全通过）。
-   - 启动 WebUI：`~/miniconda3/envs/yuki/bin/python -m netpulse.cli serve --port 8765`。
+   - 全量测试：`~/miniconda3/envs/yuki/bin/python -m pytest tests -v`（当前 13 项全通过）。
+   - 启动 WebUI：`~/miniconda3/envs/yuki/bin/python -m netpulse.cli serve --host 127.0.0.1 --port 8765`。
