@@ -4,7 +4,15 @@
     {
       "id": "mnist",
       "type": "mnist_data",
-      "params": { "data_dir": ".cache/mnist", "subset_train": 2048, "subset_val": 512 }
+      "params": {
+        "data_dir": ".cache/mnist",
+        "subset_train": 2048,
+        "subset_val": 512
+      },
+      "position": {
+        "x": 60.0,
+        "y": 290.0
+      }
     },
     {
       "id": "conv1",
@@ -17,17 +25,35 @@
         "padding": 2,
         "init": "kaiming_normal",
         "bias_init": "zeros"
+      },
+      "position": {
+        "x": 335.0,
+        "y": 583.0
       }
     },
     {
       "id": "act1",
       "type": "activation",
-      "params": { "kind": "relu" }
+      "params": {
+        "kind": "relu"
+      },
+      "position": {
+        "x": 600.0,
+        "y": 290.0
+      }
     },
     {
       "id": "pool1",
       "type": "pool2d",
-      "params": { "mode": "max", "kernel_size": 2, "stride": 2 }
+      "params": {
+        "mode": "max",
+        "kernel_size": 2,
+        "stride": 2
+      },
+      "position": {
+        "x": 870.0,
+        "y": 290.0
+      }
     },
     {
       "id": "conv2",
@@ -38,27 +64,53 @@
         "stride": 1,
         "padding": 1,
         "init": "kaiming_normal"
+      },
+      "position": {
+        "x": 1136.0,
+        "y": 41.0
       }
     },
     {
       "id": "bn2",
       "type": "batch_norm2d",
-      "params": {}
+      "params": {},
+      "position": {
+        "x": 1410.0,
+        "y": 290.0
+      }
     },
     {
       "id": "act2",
       "type": "activation",
-      "params": { "kind": "relu" }
+      "params": {
+        "kind": "relu"
+      },
+      "position": {
+        "x": 1680.0,
+        "y": 290.0
+      }
     },
     {
       "id": "pool2",
       "type": "pool2d",
-      "params": { "mode": "avg", "kernel_size": 2, "stride": 2 }
+      "params": {
+        "mode": "avg",
+        "kernel_size": 2,
+        "stride": 2
+      },
+      "position": {
+        "x": 1952.0,
+        "y": 518.0
+      }
     },
     {
       "id": "flat",
       "type": "flatten",
-      "params": {}
+      "params": {},
+      "position": {
+        "x": 2219.0,
+        "y": 148.0
+      }
     },
     {
       "id": "fc1",
@@ -67,17 +119,33 @@
         "out_features": 64,
         "init": "xavier_uniform",
         "bias_init": "zeros"
+      },
+      "position": {
+        "x": 2490.0,
+        "y": 290.0
       }
     },
     {
       "id": "act_fc1",
       "type": "activation",
-      "params": { "kind": "relu" }
+      "params": {
+        "kind": "relu"
+      },
+      "position": {
+        "x": 2760.0,
+        "y": 290.0
+      }
     },
     {
       "id": "drop",
       "type": "dropout",
-      "params": { "p": 0.1 }
+      "params": {
+        "p": 0.1
+      },
+      "position": {
+        "x": 3030.0,
+        "y": 212.5
+      }
     },
     {
       "id": "classifier",
@@ -85,45 +153,387 @@
       "params": {
         "out_features": 10,
         "init": "xavier_normal"
+      },
+      "position": {
+        "x": 3448.0,
+        "y": 172.0
       }
     },
     {
       "id": "ce",
       "type": "cross_entropy_loss",
-      "params": {}
+      "params": {},
+      "position": {
+        "x": 3782.0,
+        "y": 325.0
+      }
     },
     {
       "id": "fc_ortho_reg",
       "type": "activation_reg_loss",
-      "params": { "mode": "orthogonal" }
+      "params": {
+        "mode": "orthogonal"
+      },
+      "position": {
+        "x": 3040.0,
+        "y": 611.0
+      }
+    },
+    {
+      "id": "heatmap_preview",
+      "type": "heatmap_preview",
+      "params": {
+        "colormap": "viridis",
+        "max_size": 64,
+        "channel": 0,
+        "sample_idx": 0,
+        "symmetric": false
+      },
+      "position": {
+        "x": 3102.0,
+        "y": -273.0
+      }
+    },
+    {
+      "id": "scalar_watch",
+      "type": "scalar_watch",
+      "params": {
+        "reduce": "mean",
+        "ema_alpha": 0.1,
+        "history_len": 120
+      },
+      "position": {
+        "x": 3483.0,
+        "y": 542.0
+      }
+    },
+    {
+      "id": "scalar_watch_1",
+      "type": "scalar_watch",
+      "params": {
+        "reduce": "mean",
+        "ema_alpha": 0.1,
+        "history_len": 120
+      },
+      "position": {
+        "x": 4205.0,
+        "y": 177.0
+      }
+    },
+    {
+      "id": "tensor_peek",
+      "type": "tensor_peek",
+      "params": {
+        "view": "auto",
+        "sample_idx": 0,
+        "max_rows": 8,
+        "max_cols": 8,
+        "precision": 4
+      },
+      "position": {
+        "x": 4225.0,
+        "y": 642.0
+      }
+    },
+    {
+      "id": "monitor",
+      "type": "monitor",
+      "params": {
+        "mode": "auto",
+        "colormap": "viridis",
+        "max_size": 64,
+        "channel": 0,
+        "sample_idx": 0,
+        "symmetric": false,
+        "reduce": "mean"
+      },
+      "position": {
+        "x": 3458.0,
+        "y": -272.0
+      }
+    },
+    {
+      "id": "tensor_peek_1",
+      "type": "tensor_peek",
+      "params": {
+        "view": "auto",
+        "sample_idx": 0,
+        "max_rows": 8,
+        "max_cols": 8,
+        "precision": 4
+      },
+      "position": {
+        "x": 4164.0,
+        "y": -378.0
+      }
+    },
+    {
+      "id": "monitor_1",
+      "type": "monitor",
+      "params": {
+        "mode": "auto",
+        "colormap": "viridis",
+        "max_size": 64,
+        "channel": 0,
+        "sample_idx": 0,
+        "symmetric": false,
+        "reduce": "mean"
+      },
+      "position": {
+        "x": 2306.0,
+        "y": 662.0
+      }
+    },
+    {
+      "id": "monitor_2",
+      "type": "monitor",
+      "params": {
+        "mode": "auto",
+        "colormap": "viridis",
+        "max_size": 64,
+        "channel": 0,
+        "sample_idx": 0,
+        "symmetric": false,
+        "reduce": "mean"
+      },
+      "position": {
+        "x": 2682.0,
+        "y": 669.0
+      }
     }
   ],
   "edges": [
-    { "id": "e1", "src_node": "mnist", "src_port": "x", "dst_node": "conv1", "dst_port": "x" },
-    { "id": "e2", "src_node": "conv1", "src_port": "out", "dst_node": "act1", "dst_port": "x" },
-    { "id": "e3", "src_node": "act1", "src_port": "out", "dst_node": "pool1", "dst_port": "x" },
-    { "id": "e4", "src_node": "pool1", "src_port": "out", "dst_node": "conv2", "dst_port": "x" },
-    { "id": "e5", "src_node": "conv2", "src_port": "out", "dst_node": "bn2", "dst_port": "x" },
-    { "id": "e6", "src_node": "bn2", "src_port": "out", "dst_node": "act2", "dst_port": "x" },
-    { "id": "e7", "src_node": "act2", "src_port": "out", "dst_node": "pool2", "dst_port": "x" },
-    { "id": "e8", "src_node": "pool2", "src_port": "out", "dst_node": "flat", "dst_port": "x" },
-    { "id": "e9", "src_node": "flat", "src_port": "out", "dst_node": "fc1", "dst_port": "x" },
-    { "id": "e10", "src_node": "fc1", "src_port": "out", "dst_node": "act_fc1", "dst_port": "x" },
-    { "id": "e11", "src_node": "act_fc1", "src_port": "out", "dst_node": "drop", "dst_port": "x" },
-    { "id": "e12", "src_node": "drop", "src_port": "out", "dst_node": "classifier", "dst_port": "x" },
-    { "id": "e13", "src_node": "classifier", "src_port": "out", "dst_node": "ce", "dst_port": "logits" },
-    { "id": "e14", "src_node": "mnist", "src_port": "y", "dst_node": "ce", "dst_port": "target" },
-    { "id": "e15", "src_node": "act_fc1", "src_port": "out", "dst_node": "fc_ortho_reg", "dst_port": "x" }
+    {
+      "id": "e1",
+      "src_node": "mnist",
+      "src_port": "x",
+      "dst_node": "conv1",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e2",
+      "src_node": "conv1",
+      "src_port": "out",
+      "dst_node": "act1",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e3",
+      "src_node": "act1",
+      "src_port": "out",
+      "dst_node": "pool1",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e4",
+      "src_node": "pool1",
+      "src_port": "out",
+      "dst_node": "conv2",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e5",
+      "src_node": "conv2",
+      "src_port": "out",
+      "dst_node": "bn2",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e6",
+      "src_node": "bn2",
+      "src_port": "out",
+      "dst_node": "act2",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e7",
+      "src_node": "act2",
+      "src_port": "out",
+      "dst_node": "pool2",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e8",
+      "src_node": "pool2",
+      "src_port": "out",
+      "dst_node": "flat",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e9",
+      "src_node": "flat",
+      "src_port": "out",
+      "dst_node": "fc1",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e10",
+      "src_node": "fc1",
+      "src_port": "out",
+      "dst_node": "act_fc1",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e11",
+      "src_node": "act_fc1",
+      "src_port": "out",
+      "dst_node": "drop",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e12",
+      "src_node": "drop",
+      "src_port": "out",
+      "dst_node": "classifier",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e13",
+      "src_node": "classifier",
+      "src_port": "out",
+      "dst_node": "ce",
+      "dst_port": "logits",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e14",
+      "src_node": "mnist",
+      "src_port": "y",
+      "dst_node": "ce",
+      "dst_port": "target",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e15",
+      "src_node": "act_fc1",
+      "src_port": "out",
+      "dst_node": "fc_ortho_reg",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e16",
+      "src_node": "conv2",
+      "src_port": "out",
+      "dst_node": "heatmap_preview",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "auto"
+    },
+    {
+      "id": "e17",
+      "src_node": "fc_ortho_reg",
+      "src_port": "loss",
+      "dst_node": "scalar_watch",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "auto"
+    },
+    {
+      "id": "e18",
+      "src_node": "ce",
+      "src_port": "loss",
+      "dst_node": "scalar_watch_1",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "auto"
+    },
+    {
+      "id": "e19",
+      "src_node": "ce",
+      "src_port": "loss",
+      "dst_node": "tensor_peek",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "auto"
+    },
+    {
+      "id": "e20",
+      "src_node": "drop",
+      "src_port": "out",
+      "dst_node": "monitor",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "auto"
+    },
+    {
+      "id": "e22",
+      "src_node": "classifier",
+      "src_port": "out",
+      "dst_node": "tensor_peek_1",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "auto"
+    },
+    {
+      "id": "e21",
+      "src_node": "pool2",
+      "src_port": "out",
+      "dst_node": "monitor_1",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "auto"
+    },
+    {
+      "id": "e23",
+      "src_node": "flat",
+      "src_port": "out",
+      "dst_node": "monitor_2",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "auto"
+    }
   ],
   "losses": [
-    { "node_id": "ce", "weight": 1.0 },
-    { "node_id": "fc_ortho_reg", "weight": 0.05 }
+    {
+      "node_id": "ce",
+      "weight": 1.0,
+      "enabled": true
+    },
+    {
+      "node_id": "fc_ortho_reg",
+      "weight": 0.05,
+      "enabled": true
+    }
   ],
   "trainer": {
     "optimizer": "adam",
     "lr": 0.002,
-    "batch_size": 64,
-    "epochs": 3,
-    "eval_every_steps": 32
+    "weight_decay": 0.0,
+    "batch_size": 32,
+    "epochs": 50,
+    "max_steps": null,
+    "grad_clip": 1.0,
+    "device": "cpu",
+    "seed": 42,
+    "eval_every_steps": 32,
+    "infer_outputs": []
   }
 }
