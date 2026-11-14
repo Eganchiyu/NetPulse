@@ -49,3 +49,6 @@
 - 新增输出工具元件库（`netpulse/components/outputs.py`，并在 `__init__.py` 注册）：`monitor`（通用自适应监视器）、`scalar_watch`（标量数值与 EMA 曲线）、`heatmap_preview`（2D/特征图多色标热力图）、`tensor_peek`（原始浮点切片表格、16-bin 直方图与 4D 图像网格预览）。
 - WebUI 遥测与前端渲染：`runner.py` 节流推送 `probes` 快照，`server.py` 补充 `in_specs`；`index.html` 支持在画布节点卡片内直接绘制 Canvas 曲线/热力图/图像与原始数据表，支持悬停读数与点击 `⤢` 放大弹窗切换视图。
 - 验证通过：`pytest tests -v` 16/16 全部通过，`node --check` 前端脚本语法无误。
+
+## 2026-11-14（README 部署运行说明去本机化）
+- 更新 `README.md`“部署与运行”部分：移除本机 Conda 解释器路径 `~/miniconda3/envs/yuki/bin/python`，改为通用的虚拟环境创建、依赖安装与 WebUI/CLI/测试运行说明。

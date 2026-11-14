@@ -35,15 +35,36 @@ tests/              # 单元测试与端到端训练 / WebUI 测试
 docs/               # 架构设计文档 (design.md) 与系统交接文档 (ARCHITECTURE.md)
 ```
 
-## 快速开始与启动方法
+## 部署与运行
 
-依赖：`Python >= 3.10`、`torch`、`pydantic`、`pyyaml`、`aiohttp`、`pytest`（测试）。
-> 在本机开发环境中，请直接使用包含全部依赖的 Python 解释器：`~/miniconda3/envs/yuki/bin/python`（下同，若已激活目标虚拟环境可简写为 `python`）。
+### 环境要求
 
-### 1. 启动交互式 WebUI（推荐）
+- `Python >= 3.10`
+- 核心依赖：`torch`、`pydantic`、`pyyaml`、`aiohttp`
+- 测试依赖（可选）：`pytest`
+
+### 1. 安装依赖
+
+建议在独立虚拟环境中安装依赖（请根据本机硬件选择对应的 PyTorch CPU 或 CUDA 版本）：
 
 ```bash
-~/miniconda3/envs/yuki/bin/python -m netpulse.cli serve --host 127.0.0.1 --port 8765
+git clone <仓库地址>
+cd netpulse
+
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+pip install torch pydantic pyyaml aiohttp
+# 如需运行单元测试，可额外安装 pytest：
+pip install pytest
+```
+
+### 2. 启动交互式 WebUI（推荐）
+
+在项目根目录运行：
+
+```bash
+python -m netpulse.cli serve --host 127.0.0.1 --port 8765
 ```
 
 启动后在浏览器打开：**`http://127.0.0.1:8765`**
@@ -60,23 +81,23 @@ WebUI 常用操作：
 - **编辑参数与连接**：点击节点/连线在右侧 **属性编辑** 面板修改参数、权重或 `AutoBridge` 策略；支持 `Delete/Backspace` 删除选中项、`Ctrl+Z`/`Ctrl+Y` 撤销重做、`Ctrl+S` 保存。
 - **直接训练未保存图**：编辑后无需先落盘，点击 **开始训练** 即可直接提交当前画布图运行，并在 **训练遥测 & ERC** 面板实时调速观察 Loss 曲线与张量脉冲。
 
-### 2. CLI 检查与训练命令
+### 3. CLI 检查与训练命令
 
 ```bash
 # 列出已注册元件
-~/miniconda3/envs/yuki/bin/python -m netpulse.cli list
+python -m netpulse.cli list
 
 # 执行 ERC 静态检查与 Meta 形状推导
-~/miniconda3/envs/yuki/bin/python -m netpulse.cli check examples/mnist_atomic.json
+python -m netpulse.cli check examples/mnist_atomic.json
 
 # 编译并运行训练闭环（支持导出 .pt 权重）
-~/miniconda3/envs/yuki/bin/python -m netpulse.cli train examples/mnist_atomic.json --save .cache/mnist_atomic.pt
+python -m netpulse.cli train examples/mnist_atomic.json --save .cache/mnist_atomic.pt
 ```
 
-### 3. 运行测试
+### 4. 运行测试
 
 ```bash
-~/miniconda3/envs/yuki/bin/python -m pytest tests -v
+python -m pytest tests -v
 ```
 
 ## 开源协议
