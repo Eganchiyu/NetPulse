@@ -52,3 +52,12 @@
 
 ## 2026-11-14（README 部署运行说明去本机化）
 - 更新 `README.md`“部署与运行”部分：移除本机 Conda 解释器路径 `~/miniconda3/envs/yuki/bin/python`，改为通用的虚拟环境创建、依赖安装与 WebUI/CLI/测试运行说明。
+
+## 2026-11-14（LSTM 序列套件与专属可视化分析探针）
+- 底层 `Signal` 序列适配：`netpulse/core/trainer.py` 支持 `BLD` 布局与变长 `mask` 透传；`sources.py` 新增 `_SourceModule.sample_has_mask` 支持 `meta` 推导。
+- 新增序列与循环元件：
+  - `seq_wave_data`（`sources.py`）：合成序列分类数据源（`memory_cue` / `freq_pattern`），支持变长 `mask`。
+  - `image_to_seq` 与 `seq_pool`（`ops.py`）：`BCHW -> BLD` 图像序列切片、`BLD -> BD` 感知 Mask 池化（`last/mean/max`）。
+  - `lstm`（`backbones.py`）：基于步进 `LSTMCell` 的可观测门控 LSTM，支持变长 Mask 状态冻结、`last_h/last_c` 输出及 `gate_i/gate_f/gate_o/cell_state/hidden_states` 抽头。
+- 新增 3 个专属可视化分析探针（`outputs.py` + `webui/index.html` Canvas 渲染）：`gate_dynamics`（多门控时序曲线 + 神经元条带热图 + 饱和率）、`hidden_trajectory`（PCA/first2 2D 相空间演化轨迹）、`step_energy`（时间步响应 L2 能量与步间跃迁）。
+- 新增示例工作流 `examples/lstm_seq_observatory.json` 与测试 `tests/test_lstm_and_probes.py`，`pytest tests -v` 20/20 全部通过。

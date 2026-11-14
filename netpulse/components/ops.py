@@ -172,3 +172,122 @@ class TensorAdd(BaseComponent):
             alpha=float(params.get("alpha", 1.0)),
             beta=float(params.get("beta", 1.0)),
         )
+
+
+class _ImageToSeqModule(nn.Module):
+    """将 4D BCHW 特征图按行或列展开为 3D BLD 序列。"""
+
+    def __init__(self, mode: str = "rows") -> None:
+        super().__init__()
+        self.mode = mode
+
+    def forward(self, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        sig = inputs["x"]
+        x = sig.data
+        b, c, h, w = x.shape
+        if self.mode == "cols":
+            # (B, C, H, W) -> (B, W, C * H)
+            seq = x.permute(0, 3, 1, 2).reshape(b, w, c * h)
+        else:
+            # (B, C, H, W) -> (B, H, C * W)
+            seq = x.permute(0, 2, 1, 3).reshape(b, h, c * w)
+        return {"out": Signal(data=seq, mask=None, meta={**sig.meta, "layout": "BLD"})}
+
+
+@register_component("image_to_seq")
+class ImageToSeq(BaseComponent):
+    """图像转序列算子（BCHW -> BLD），可直接把 MNIST 等图像喂给 LSTM。"""
+
+    category = "op"
+    display_name = "ImageToSeq"
+    description = "将 4D 图像按行/列切片展开为 3D BLD 序列"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec(
+                "mode",
+                "select",
+                "rows",
+                options=["rows", "cols"],
+                description="切片方向（rows: 高作时间步; cols: 宽作时间步）",
+            ),
+        ]
+
+    @classmethod
+    def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
+        return ComponentSignature(
+            inputs=[PortSpec(name="x", kind="tensor", rank=[4], layout="BCHW")],
+            outputs=[PortSpec(name="out", kind="tensor", rank=[3], layout="BLD")],
+        )
+
+    def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
+        return _ImageToSeqModule(mode=str(params.get("mode", "rows")))
+
+
+class _SeqPoolModule(nn.Module):
+    """感知 Mask 的序列汇聚算子（BLD -> BD）。"""
+
+    def __init__(self, mode: str = "last") -> None:
+        super().__init__()
+        self.mode = mode
+
+    def forward(self, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        sig = inputs["x"]
+        x = sig.data
+        mask = sig.mask
+        b, l, d = x.shape
+
+        if self.mode == "mean":
+            if mask is not None:
+                m = mask.unsqueeze(-1).to(x.dtype)
+                pooled = (x * m).sum(dim=1) / m.sum(dim=1).clamp(min=1.0)
+            else:
+                pooled = x.mean(dim=1)
+        elif self.mode == "max":
+            if mask is not None:
+                m = mask.unsqueeze(-1).bool()
+                pooled = x.masked_fill(~m, -1e9).max(dim=1).values
+            else:
+                pooled = x.max(dim=1).values
+        else:
+            # last valid step
+            if mask is not None:
+                lengths = mask.long().sum(dim=1).clamp(min=1) - 1
+                idx = lengths.view(b, 1, 1).expand(b, 1, d)
+                pooled = x.gather(dim=1, index=idx).squeeze(1)
+            else:
+                pooled = x[:, -1, :]
+
+        return {"out": Signal(data=pooled, mask=None, meta={**sig.meta, "layout": "BD"})}
+
+
+@register_component("seq_pool")
+class SeqPool(BaseComponent):
+    """序列汇聚算子（BLD -> BD），自动感知有效长度 Mask。"""
+
+    category = "op"
+    display_name = "SeqPool"
+    description = "序列池化（last 取末有效步 / mean / max，支持 Mask）"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec(
+                "mode",
+                "select",
+                "last",
+                options=["last", "mean", "max"],
+                description="汇聚模式（last 会自动跳过 Mask 填充步）",
+            ),
+        ]
+
+    @classmethod
+    def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
+        return ComponentSignature(
+            inputs=[PortSpec(name="x", kind="tensor", rank=[3], layout="BLD")],
+            outputs=[PortSpec(name="out", kind="tensor", rank=[2], layout="BD")],
+        )
+
+    def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
+        return _SeqPoolModule(mode=str(params.get("mode", "last")))

@@ -37,27 +37,45 @@ def _build_optimizer(model: nn.Module, name: str, lr: float, weight_decay: float
     raise ValueError(f"Unsupported optimizer: {name}")
 
 
+def _infer_x_layout(x: torch.Tensor) -> str:
+    if x.ndim == 4:
+        return "BCHW"
+    if x.ndim == 3:
+        return "BLD"
+    if x.ndim == 2:
+        return "BD"
+    return "ANY"
+
+
 def _to_signal_batch(
     source_id: str,
     raw_batch: Any,
     device: torch.device,
 ) -> dict[str, dict[str, Signal]]:
-    if isinstance(raw_batch, (tuple, list)) and len(raw_batch) == 2:
-        x, y = raw_batch
-        x = x.to(device)
-        y = y.to(device)
-        x_layout = "BCHW" if x.ndim == 4 else ("BD" if x.ndim == 2 else "ANY")
+    if isinstance(raw_batch, (tuple, list)) and len(raw_batch) in (2, 3):
+        x = raw_batch[0].to(device)
+        y = raw_batch[1].to(device)
+        mask = raw_batch[2].to(device).bool() if len(raw_batch) == 3 and raw_batch[2] is not None else None
+        x_layout = _infer_x_layout(x)
         return {
             source_id: {
-                "x": Signal(data=x, meta={"layout": x_layout}),
+                "x": Signal(data=x, mask=mask, meta={"layout": x_layout}),
                 "y": Signal(data=y, meta={"layout": "B"}),
             }
         }
     if isinstance(raw_batch, dict):
-        moved = {
-            k: Signal(data=v.to(device), meta={"layout": "BCHW" if v.ndim == 4 else "ANY"})
-            for k, v in raw_batch.items()
-        }
+        mask = raw_batch.get("mask")
+        mask_dev = mask.to(device).bool() if isinstance(mask, torch.Tensor) else None
+        moved: dict[str, Signal] = {}
+        for k, v in raw_batch.items():
+            if k == "mask":
+                continue
+            vt = v.to(device)
+            moved[k] = Signal(
+                data=vt,
+                mask=mask_dev if k == "x" else None,
+                meta={"layout": _infer_x_layout(vt) if k != "y" else "B"},
+            )
         return {source_id: moved}
     raise TypeError(f"Unsupported batch format from source '{source_id}': {type(raw_batch)}")
 

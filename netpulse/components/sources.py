@@ -27,22 +27,29 @@ class _SourceModule(nn.Module):
         sample_y_shape: tuple[int, ...],
         x_layout: str,
         loader_factory,
+        sample_has_mask: bool = False,
     ) -> None:
         super().__init__()
         self.sample_x_shape = sample_x_shape
         self.sample_y_shape = sample_y_shape
         self.x_layout = x_layout
         self._loader_factory = loader_factory
+        self.sample_has_mask = sample_has_mask
 
     def forward(self, inputs: dict[str, Signal]) -> dict[str, Signal]:
         if "x" in inputs and "y" in inputs:
             return inputs
         # Meta 推导或空输入时返回虚拟符号张量
-        dev = "meta" if any(True for _ in []) else "meta"
+        dev = "meta"
         x = torch.empty(self.sample_x_shape, dtype=torch.float32, device=dev)
         y = torch.empty(self.sample_y_shape, dtype=torch.int64, device=dev)
+        mask = (
+            torch.empty(self.sample_x_shape[:2], dtype=torch.bool, device=dev)
+            if self.sample_has_mask and len(self.sample_x_shape) >= 2
+            else None
+        )
         return {
-            "x": Signal(data=x, meta={"layout": self.x_layout}),
+            "x": Signal(data=x, mask=mask, meta={"layout": self.x_layout}),
             "y": Signal(data=y, meta={"layout": "B"}),
         }
 
@@ -232,4 +239,114 @@ class MNISTData(BaseComponent):
             sample_y_shape=(batch_hint,),
             x_layout="BCHW",
             loader_factory=_factory,
+        )
+
+
+@register_component("seq_wave_data")
+class SeqWaveData(BaseComponent):
+    """内置秒开合成时序数据源：支持波形频率分类与长程记忆线索（含可选变长 Mask）。"""
+
+    category = "source"
+    display_name = "SeqWave Data"
+    description = "合成多维序列分类数据源（波形模式 / 记忆线索，支持变长 Mask）"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec(
+                "task",
+                "select",
+                "memory_cue",
+                options=["memory_cue", "freq_pattern"],
+                description="任务类型（memory_cue 突出长程记忆门控；freq_pattern 多频波形分类）",
+            ),
+            ParamSpec("seq_len", "int", 28, min=8, max=256, step=4, description="最大序列长度 L"),
+            ParamSpec("feat_dim", "int", 4, min=1, max=64, step=1, description="每步输入特征维 D"),
+            ParamSpec("num_classes", "int", 3, min=2, max=10, step=1, description="分类数"),
+            ParamSpec("num_samples", "int", 600, min=64, max=5000, step=50, description="总样本数"),
+            ParamSpec("variable_length", "bool", True, description="是否生成随机有效长度并附带 Mask"),
+            ParamSpec("noise", "float", 0.12, min=0.0, max=1.0, step=0.02, description="观测高斯噪声"),
+        ]
+
+    @classmethod
+    def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
+        return ComponentSignature(
+            inputs=[],
+            outputs=[
+                PortSpec(name="x", kind="tensor", rank=[3], layout="BLD", dtype="float32"),
+                PortSpec(name="y", kind="tensor", rank=[1], layout="B", dtype="int64"),
+            ],
+        )
+
+    def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
+        task = str(params.get("task", "memory_cue"))
+        seq_len = int(params.get("seq_len", 28))
+        feat_dim = int(params.get("feat_dim", 4))
+        num_classes = int(params.get("num_classes", 3))
+        num_samples = int(params.get("num_samples", 600))
+        variable_length = bool(params.get("variable_length", True))
+        noise = float(params.get("noise", 0.12))
+        batch_hint = int(params.get("meta_batch_size", 32))
+
+        def _factory(batch_size: int, seed: int):
+            g = torch.Generator().manual_seed(seed)
+            x = torch.randn((num_samples, seq_len, feat_dim), generator=g) * noise
+            y = torch.randint(0, num_classes, (num_samples,), generator=g, dtype=torch.int64)
+            mask = torch.ones((num_samples, seq_len), dtype=torch.bool)
+
+            t = torch.linspace(0.0, 2.0 * math.pi, seq_len)
+            min_valid = max(6, seq_len // 2)
+
+            for i in range(num_samples):
+                cls_id = int(y[i].item())
+                valid_len = (
+                    int(torch.randint(min_valid, seq_len + 1, (1,), generator=g).item())
+                    if variable_length
+                    else seq_len
+                )
+                if task == "memory_cue":
+                    # 开头 3~5 步注入类别原型脉冲，中间主要为噪声，结尾给出查询触发脉冲
+                    cue_len = min(4, max(2, seq_len // 6))
+                    angle = 2.0 * math.pi * cls_id / num_classes
+                    x[i, :cue_len, 0] += 1.8 * math.cos(angle)
+                    if feat_dim > 1:
+                        x[i, :cue_len, 1] += 1.8 * math.sin(angle)
+                    if feat_dim > 2:
+                        # 第 2 维放门控提示脉冲：开头写提示=+1，结尾读提示=-1
+                        x[i, :cue_len, 2] += 1.2
+                        x[i, valid_len - 2 : valid_len, 2] -= 1.2
+                else:
+                    # 多频正余弦与斜坡包络波形
+                    freq = 1.0 + cls_id * 1.15
+                    phase = float(torch.rand(1, generator=g).item()) * 0.5
+                    wave = torch.sin(freq * t + phase)
+                    cos_w = torch.cos(freq * t + phase)
+                    x[i, :, 0] += wave
+                    if feat_dim > 1:
+                        x[i, :, 1] += cos_w
+                    if feat_dim > 2:
+                        x[i, :, 2] += (cls_id / max(1, num_classes - 1) - 0.5) * torch.linspace(0.2, 1.0, seq_len)
+
+                if valid_len < seq_len:
+                    x[i, valid_len:] = 0.0
+                    mask[i, valid_len:] = False
+
+            split = int(num_samples * 0.8)
+            if variable_length:
+                train_ds = TensorDataset(x[:split], y[:split], mask[:split])
+                val_ds = TensorDataset(x[split:], y[split:], mask[split:])
+            else:
+                train_ds = TensorDataset(x[:split], y[:split])
+                val_ds = TensorDataset(x[split:], y[split:])
+            return (
+                DataLoader(train_ds, batch_size=batch_size, shuffle=True),
+                DataLoader(val_ds, batch_size=batch_size, shuffle=False),
+            )
+
+        return _SourceModule(
+            sample_x_shape=(batch_hint, seq_len, feat_dim),
+            sample_y_shape=(batch_hint,),
+            x_layout="BLD",
+            loader_factory=_factory,
+            sample_has_mask=variable_length,
         )

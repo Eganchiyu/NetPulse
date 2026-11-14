@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from netpulse.components.init_utils import apply_init
 from netpulse.core.component import BaseComponent
@@ -297,4 +299,199 @@ class MLPBlock(BaseComponent):
             dropout=dropout,
             weight_init=params.get("init") or None,
             bias_init=params.get("bias_init") or None,
+        )
+
+
+class _LSTMModule(nn.Module):
+    """支持变长 Mask 与细粒度门控 Tap 抽头的多层步进 LSTM。"""
+
+    def __init__(
+        self,
+        in_dim: int,
+        hidden_size: int,
+        num_layers: int = 1,
+        dropout: float = 0.0,
+        forget_bias: float = 1.0,
+        weight_init: Any = None,
+    ) -> None:
+        super().__init__()
+        self.in_dim = in_dim
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.forget_bias = forget_bias
+
+        cells: list[nn.LSTMCell] = []
+        for layer_idx in range(num_layers):
+            d_in = in_dim if layer_idx == 0 else hidden_size
+            cell = nn.LSTMCell(d_in, hidden_size)
+            if weight_init:
+                apply_init(cell.weight_ih, cell.bias_ih, weight_init, None)
+                apply_init(cell.weight_hh, cell.bias_hh, "orthogonal" if weight_init == "orthogonal" else weight_init, None)
+            if forget_bias != 0.0 and cell.bias_ih is not None and cell.bias_hh is not None:
+                with torch.no_grad():
+                    # LSTMCell 门控顺序为 i, f, g, o
+                    cell.bias_ih[hidden_size : 2 * hidden_size].fill_(forget_bias * 0.5)
+                    cell.bias_hh[hidden_size : 2 * hidden_size].fill_(forget_bias * 0.5)
+            cells.append(cell)
+
+        self.cells = nn.ModuleList(cells)
+        self.drop = nn.Dropout(dropout) if dropout > 0.0 and num_layers > 1 else nn.Identity()
+
+    def _run(
+        self,
+        inputs: dict[str, Signal],
+        collect_taps: bool,
+    ) -> tuple[dict[str, Signal], dict[str, Signal]]:
+        x_sig = inputs["x"]
+        x = x_sig.data
+        mask = x_sig.mask.bool() if x_sig.mask is not None else None
+        b, seq_len, _ = x.shape
+
+        seq_input = x
+        last_h = torch.zeros((b, self.hidden_size), device=x.device, dtype=x.dtype)
+        last_c = torch.zeros((b, self.hidden_size), device=x.device, dtype=x.dtype)
+
+        tap_i: list[torch.Tensor] = []
+        tap_f: list[torch.Tensor] = []
+        tap_o: list[torch.Tensor] = []
+        tap_c: list[torch.Tensor] = []
+        tap_h: list[torch.Tensor] = []
+
+        for layer_idx, cell in enumerate(self.cells):
+            is_last_layer = layer_idx == self.num_layers - 1
+            h = torch.zeros((b, self.hidden_size), device=x.device, dtype=x.dtype)
+            c = torch.zeros((b, self.hidden_size), device=x.device, dtype=x.dtype)
+            layer_outs: list[torch.Tensor] = []
+
+            for t in range(seq_len):
+                x_t = seq_input[:, t, :]
+                gates = F.linear(x_t, cell.weight_ih, cell.bias_ih) + F.linear(h, cell.weight_hh, cell.bias_hh)
+                i_g, f_g, g_g, o_g = gates.chunk(4, dim=-1)
+                i_t = torch.sigmoid(i_g)
+                f_t = torch.sigmoid(f_g)
+                g_t = torch.tanh(g_g)
+                o_t = torch.sigmoid(o_g)
+
+                c_new = f_t * c + i_t * g_t
+                h_new = o_t * torch.tanh(c_new)
+
+                if mask is not None:
+                    m_t = mask[:, t].unsqueeze(-1)
+                    c = torch.where(m_t, c_new, c)
+                    h = torch.where(m_t, h_new, h)
+                else:
+                    c, h = c_new, h_new
+
+                layer_outs.append(h)
+
+                if collect_taps and is_last_layer:
+                    tap_i.append(i_t)
+                    tap_f.append(f_t)
+                    tap_o.append(o_t)
+                    tap_c.append(c)
+                    tap_h.append(h)
+
+            seq_out = torch.stack(layer_outs, dim=1)
+            if not is_last_layer:
+                seq_input = self.drop(seq_out)
+            else:
+                seq_input = seq_out
+                last_h = h
+                last_c = c
+
+        out_meta = {**x_sig.meta, "layout": "BLD"}
+        bd_meta = {**x_sig.meta, "layout": "BD"}
+        outputs = {
+            "out": Signal(data=seq_input, mask=x_sig.mask, meta=out_meta),
+            "last_h": Signal(data=last_h, mask=None, meta=bd_meta),
+            "last_c": Signal(data=last_c, mask=None, meta=bd_meta),
+        }
+        taps: dict[str, Signal] = {}
+        if collect_taps:
+            taps = {
+                "gate_i": Signal(data=torch.stack(tap_i, dim=1), mask=x_sig.mask, meta=out_meta),
+                "gate_f": Signal(data=torch.stack(tap_f, dim=1), mask=x_sig.mask, meta=out_meta),
+                "gate_o": Signal(data=torch.stack(tap_o, dim=1), mask=x_sig.mask, meta=out_meta),
+                "cell_state": Signal(data=torch.stack(tap_c, dim=1), mask=x_sig.mask, meta=out_meta),
+                "hidden_states": Signal(data=torch.stack(tap_h, dim=1), mask=x_sig.mask, meta=out_meta),
+            }
+        return outputs, taps
+
+    def forward_with_taps(
+        self, inputs: dict[str, Signal]
+    ) -> tuple[dict[str, Signal], dict[str, Signal]]:
+        return self._run(inputs, collect_taps=True)
+
+    def forward(self, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        outputs, _ = self._run(inputs, collect_taps=False)
+        return outputs
+
+
+@register_component("lstm")
+class LSTMLayer(BaseComponent):
+    """可观测门控 LSTM 模块（支持 Mask 感知与 i/f/o/c/h 细粒度 Tap 抽头）。"""
+
+    category = "backbone"
+    display_name = "LSTM"
+    description = "门控长短期记忆网络（支持 Mask、last_h/c 输出与门控序列抽头）"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("hidden_size", "int", 32, required=True, min=1, max=1024, step=1, description="隐藏状态维度 H"),
+            ParamSpec("num_layers", "int", 1, min=1, max=6, step=1, description="堆叠层数"),
+            ParamSpec("dropout", "float", 0.0, min=0.0, max=0.9, step=0.05, description="多层间 Dropout"),
+            ParamSpec("forget_bias", "float", 1.0, min=-5.0, max=5.0, step=0.5, description="遗忘门初始偏置（建议 >0 利长程记忆）"),
+            ParamSpec("in_dim", "int", None, min=1, max=8192, step=1, description="可选：强制输入特征维校验"),
+            ParamSpec(
+                "init",
+                "select",
+                "orthogonal",
+                options=["", "orthogonal", "xavier_normal", "kaiming_normal"],
+                description="权重初始化",
+            ),
+        ]
+
+    @classmethod
+    def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
+        taps = [
+            TapSpec(name="gate_i", source="cells", spec=PortSpec(name="gate_i", kind="tensor", rank=[3], layout="BLD")),
+            TapSpec(name="gate_f", source="cells", spec=PortSpec(name="gate_f", kind="tensor", rank=[3], layout="BLD")),
+            TapSpec(name="gate_o", source="cells", spec=PortSpec(name="gate_o", kind="tensor", rank=[3], layout="BLD")),
+            TapSpec(name="cell_state", source="cells", spec=PortSpec(name="cell_state", kind="tensor", rank=[3], layout="BLD")),
+            TapSpec(name="hidden_states", source="cells", spec=PortSpec(name="hidden_states", kind="tensor", rank=[3], layout="BLD")),
+        ]
+        return ComponentSignature(
+            inputs=[PortSpec(name="x", kind="tensor", rank=[3], layout="BLD")],
+            outputs=[
+                PortSpec(name="out", kind="tensor", rank=[3], layout="BLD"),
+                PortSpec(name="last_h", kind="tensor", rank=[2], layout="BD"),
+                PortSpec(name="last_c", kind="tensor", rank=[2], layout="BD"),
+            ],
+            taps=taps,
+        )
+
+    def expected_input_spec(
+        self,
+        params: dict[str, Any],
+        port_name: str,
+        actual: ResolvedSpec,
+        resolved_in_specs: dict[str, ResolvedSpec],
+    ) -> Optional[ResolvedSpec]:
+        if port_name == "x" and params.get("in_dim") is not None:
+            d = int(params["in_dim"])
+            new_shape = actual.shape[:-1] + (d,)
+            return ResolvedSpec(shape=new_shape, dtype=actual.dtype, layout=actual.layout, has_mask=actual.has_mask)
+        return None
+
+    def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
+        raw_in = params.get("in_dim")
+        in_dim = int(raw_in if raw_in is not None else in_specs["x"].shape[-1])
+        return _LSTMModule(
+            in_dim=in_dim,
+            hidden_size=int(params.get("hidden_size", 32)),
+            num_layers=int(params.get("num_layers", 1)),
+            dropout=float(params.get("dropout", 0.0)),
+            forget_bias=float(params.get("forget_bias", 1.0)),
+            weight_init=params.get("init") or None,
         )
