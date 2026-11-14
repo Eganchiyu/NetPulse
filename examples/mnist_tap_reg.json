@@ -1,0 +1,66 @@
+{
+  "name": "mnist_cnn_tap_reg",
+  "nodes": [
+    {
+      "id": "mnist",
+      "type": "mnist_data",
+      "params": { "data_dir": ".cache/mnist", "subset_train": 2048, "subset_val": 512 }
+    },
+    {
+      "id": "cnn",
+      "type": "cnn_block",
+      "params": { "channels": [16, 32], "kernel_size": 3, "pool_every": 1, "activation": "relu" }
+    },
+    {
+      "id": "flat",
+      "type": "flatten",
+      "params": {}
+    },
+    {
+      "id": "head",
+      "type": "mlp_block",
+      "params": { "dims": [64, 10], "activation": "relu" }
+    },
+    {
+      "id": "tap_pool",
+      "type": "global_avg_pool",
+      "params": {}
+    },
+    {
+      "id": "tap_proj",
+      "type": "matrix_bridge",
+      "params": { "out_dim": 16 }
+    },
+    {
+      "id": "ce",
+      "type": "cross_entropy_loss",
+      "params": {}
+    },
+    {
+      "id": "ortho_reg",
+      "type": "activation_reg_loss",
+      "params": { "mode": "orthogonal" }
+    }
+  ],
+  "edges": [
+    { "id": "e_img", "src_node": "mnist", "src_port": "x", "dst_node": "cnn", "dst_port": "x" },
+    { "id": "e_flat", "src_node": "cnn", "src_port": "out", "dst_node": "flat", "dst_port": "x" },
+    { "id": "e_head", "src_node": "flat", "src_port": "out", "dst_node": "head", "dst_port": "x" },
+    { "id": "e_logits", "src_node": "head", "src_port": "out", "dst_node": "ce", "dst_port": "logits" },
+    { "id": "e_label", "src_node": "mnist", "src_port": "y", "dst_node": "ce", "dst_port": "target" },
+    { "id": "e_tap", "src_node": "cnn", "src_port": "layer_1", "dst_node": "tap_pool", "dst_port": "x", "edge_kind": "tap" },
+    { "id": "e_proj", "src_node": "tap_pool", "src_port": "out", "dst_node": "tap_proj", "dst_port": "x" },
+    { "id": "e_reg", "src_node": "tap_proj", "src_port": "out", "dst_node": "ortho_reg", "dst_port": "x" }
+  ],
+  "losses": [
+    { "node_id": "ce", "weight": 1.0 },
+    { "node_id": "ortho_reg", "weight": 0.1 }
+  ],
+  "trainer": {
+    "optimizer": "adam",
+    "lr": 0.002,
+    "batch_size": 64,
+    "epochs": 3,
+    "eval_every_steps": 32
+  }
+}

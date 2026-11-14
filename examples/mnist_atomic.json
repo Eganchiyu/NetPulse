@@ -1,0 +1,129 @@
+{
+  "name": "mnist_atomic_pipeline",
+  "nodes": [
+    {
+      "id": "mnist",
+      "type": "mnist_data",
+      "params": { "data_dir": ".cache/mnist", "subset_train": 2048, "subset_val": 512 }
+    },
+    {
+      "id": "conv1",
+      "type": "conv2d",
+      "params": {
+        "in_channels": 1,
+        "out_channels": 16,
+        "kernel_size": 5,
+        "stride": 1,
+        "padding": 2,
+        "init": "kaiming_normal",
+        "bias_init": "zeros"
+      }
+    },
+    {
+      "id": "act1",
+      "type": "activation",
+      "params": { "kind": "relu" }
+    },
+    {
+      "id": "pool1",
+      "type": "pool2d",
+      "params": { "mode": "max", "kernel_size": 2, "stride": 2 }
+    },
+    {
+      "id": "conv2",
+      "type": "conv2d",
+      "params": {
+        "out_channels": 32,
+        "kernel_size": 3,
+        "stride": 1,
+        "padding": 1,
+        "init": "kaiming_normal"
+      }
+    },
+    {
+      "id": "bn2",
+      "type": "batch_norm2d",
+      "params": {}
+    },
+    {
+      "id": "act2",
+      "type": "activation",
+      "params": { "kind": "relu" }
+    },
+    {
+      "id": "pool2",
+      "type": "pool2d",
+      "params": { "mode": "avg", "kernel_size": 2, "stride": 2 }
+    },
+    {
+      "id": "flat",
+      "type": "flatten",
+      "params": {}
+    },
+    {
+      "id": "fc1",
+      "type": "linear",
+      "params": {
+        "out_features": 64,
+        "init": "xavier_uniform",
+        "bias_init": "zeros"
+      }
+    },
+    {
+      "id": "act_fc1",
+      "type": "activation",
+      "params": { "kind": "relu" }
+    },
+    {
+      "id": "drop",
+      "type": "dropout",
+      "params": { "p": 0.1 }
+    },
+    {
+      "id": "classifier",
+      "type": "linear",
+      "params": {
+        "out_features": 10,
+        "init": "xavier_normal"
+      }
+    },
+    {
+      "id": "ce",
+      "type": "cross_entropy_loss",
+      "params": {}
+    },
+    {
+      "id": "fc_ortho_reg",
+      "type": "activation_reg_loss",
+      "params": { "mode": "orthogonal" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "src_node": "mnist", "src_port": "x", "dst_node": "conv1", "dst_port": "x" },
+    { "id": "e2", "src_node": "conv1", "src_port": "out", "dst_node": "act1", "dst_port": "x" },
+    { "id": "e3", "src_node": "act1", "src_port": "out", "dst_node": "pool1", "dst_port": "x" },
+    { "id": "e4", "src_node": "pool1", "src_port": "out", "dst_node": "conv2", "dst_port": "x" },
+    { "id": "e5", "src_node": "conv2", "src_port": "out", "dst_node": "bn2", "dst_port": "x" },
+    { "id": "e6", "src_node": "bn2", "src_port": "out", "dst_node": "act2", "dst_port": "x" },
+    { "id": "e7", "src_node": "act2", "src_port": "out", "dst_node": "pool2", "dst_port": "x" },
+    { "id": "e8", "src_node": "pool2", "src_port": "out", "dst_node": "flat", "dst_port": "x" },
+    { "id": "e9", "src_node": "flat", "src_port": "out", "dst_node": "fc1", "dst_port": "x" },
+    { "id": "e10", "src_node": "fc1", "src_port": "out", "dst_node": "act_fc1", "dst_port": "x" },
+    { "id": "e11", "src_node": "act_fc1", "src_port": "out", "dst_node": "drop", "dst_port": "x" },
+    { "id": "e12", "src_node": "drop", "src_port": "out", "dst_node": "classifier", "dst_port": "x" },
+    { "id": "e13", "src_node": "classifier", "src_port": "out", "dst_node": "ce", "dst_port": "logits" },
+    { "id": "e14", "src_node": "mnist", "src_port": "y", "dst_node": "ce", "dst_port": "target" },
+    { "id": "e15", "src_node": "act_fc1", "src_port": "out", "dst_node": "fc_ortho_reg", "dst_port": "x" }
+  ],
+  "losses": [
+    { "node_id": "ce", "weight": 1.0 },
+    { "node_id": "fc_ortho_reg", "weight": 0.05 }
+  ],
+  "trainer": {
+    "optimizer": "adam",
+    "lr": 0.002,
+    "batch_size": 64,
+    "epochs": 3,
+    "eval_every_steps": 32
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "name": "spiral_quickstart",
+  "nodes": [
+    {
+      "id": "src",
+      "type": "spiral_data",
+      "params": { "num_classes": 3, "points_per_class": 150, "noise": 0.12 }
+    },
+    {
+      "id": "mlp",
+      "type": "mlp_block",
+      "params": { "dims": [32, 32, 3], "activation": "relu" }
+    },
+    {
+      "id": "ce",
+      "type": "cross_entropy_loss",
+      "params": {}
+    },
+    {
+      "id": "reg",
+      "type": "activation_reg_loss",
+      "params": { "mode": "l2" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "src_node": "src", "src_port": "x", "dst_node": "mlp", "dst_port": "x" },
+    { "id": "e2", "src_node": "mlp", "src_port": "out", "dst_node": "ce", "dst_port": "logits" },
+    { "id": "e3", "src_node": "src", "src_port": "y", "dst_node": "ce", "dst_port": "target" },
+    { "id": "e4", "src_node": "mlp", "src_port": "layer_1", "dst_node": "reg", "dst_port": "x", "edge_kind": "tap" }
+  ],
+  "losses": [
+    { "node_id": "ce", "weight": 1.0 },
+    { "node_id": "reg", "weight": 0.01 }
+  ],
+  "trainer": {
+    "optimizer": "adam",
+    "lr": 0.02,
+    "batch_size": 64,
+    "epochs": 25,
+    "eval_every_steps": 50
+  }
+}

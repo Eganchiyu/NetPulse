@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NetPulse — 节点流计算图沙盒</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c222b;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --source: #3b82f6;
+    --backbone: #10b981;
+    --op: #a855f7;
+    --bridge: #f59e0b;
+    --loss: #f43f5e;
+    --tap: #fbbf24;
+    --accent: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    overflow: hidden;
+  }
+  .app {
+    display: grid;
+    grid-template-rows: 56px 1fr;
+    height: 100vh;
+  }
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    z-index: 20;
+    overflow-x: auto;
+  }
+  .brand {
+    font-weight: 700; font-size: 15px; letter-spacing: .4px;
+    display: flex; align-items: center; gap: 8px; white-space: nowrap;
+  }
+  .brand-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 10px var(--accent);
+  }
+  .divider { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; }
+  select, input[type="number"] {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 8px; font-size: 13px; outline: none;
+  }
+  input[type="number"] { width: 68px; }
+  button {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 12px; font-size: 13px; font-weight: 500;
+    cursor: pointer; white-space: nowrap;
+    transition: background .15s, border-color .15s;
+  }
+  button:hover:not(:disabled) { background: #262e3a; border-color: #4b5563; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.primary { background: #1d4ed8; border-color: #2563eb; }
+  button.primary:hover:not(:disabled) { background: #2563eb; }
+  button.warn { background: #92400e; border-color: #b45309; }
+  button.danger { background: #9f1239; border-color: #be123c; }
+  .badge {
+    font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
+    white-space: nowrap;
+  }
+  .badge.pass { background: rgba(16, 185, 129, .15); color: #34d399; border: 1px solid rgba(16,185,129,.4); }
+  .badge.fail { background: rgba(244, 63, 94, .15); color: #fb7185; border: 1px solid rgba(244,63,94,.4); }
+  .speed-box {
+    display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap;
+  }
+  .speed-box input[type="range"] { width: 120px; accent-color: var(--accent); cursor: pointer; }
+  .speed-val { color: var(--accent); font-family: ui-monospace, monospace; min-width: 58px; }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: 1fr 370px;
+    height: 100%;
+    min-height: 0;
+  }
+  .canvas-wrap {
+    position: relative;
+    overflow: hidden;
+    background-color: #0b0f14;
+    background-image:
+      radial-gradient(#1f2937 1px, transparent 1px);
+    background-size: 24px 24px;
+    cursor: grab;
+  }
+  .canvas-wrap.grabbing { cursor: grabbing; }
+  .stage {
+    position: absolute; top: 0; left: 0;
+    transform-origin: 0 0;
+    width: 4000px; height: 3000px;
+  }
+  svg.edges-layer {
+    position: absolute; top: 0; left: 0; width: 4000px; height: 3000px;
+    pointer-events: none; overflow: visible;
+  }
+  .nodes-layer {
+    position: absolute; top: 0; left: 0; width: 4000px; height: 3000px;
+  }
+  .node-card {
+    position: absolute;
+    width: 224px;
+    background: rgba(22, 27, 34, 0.96);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+    user-select: none;
+    cursor: default;
+    transition: box-shadow .18s, border-color .18s;
+  }
+  .node-card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, .5), 0 8px 28px rgba(56, 189, 248, .22);
+  }
+  .node-head {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    border-radius: 9px 9px 0 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    cursor: move;
+    border-top: 3px solid var(--accent);
+  }
+  .node-card[data-cat="source"] .node-head { border-top-color: var(--source); }
+  .node-card[data-cat="backbone"] .node-head { border-top-color: var(--backbone); }
+  .node-card[data-cat="op"] .node-head { border-top-color: var(--op); }
+  .node-card[data-cat="bridge"] .node-head { border-top-color: var(--bridge); }
+  .node-card[data-cat="loss"] .node-head { border-top-color: var(--loss); }
+
+  .node-title { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node-type {
+    font-size: 11px; padding: 1px 6px; border-radius: 4px;
+    background: #21262d; color: var(--muted); font-family: ui-monospace, monospace;
+  }
+  .node-params {
+    padding: 5px 10px; font-size: 11px; color: var(--muted);
+    font-family: ui-monospace, monospace;
+    border-bottom: 1px dashed rgba(48, 54, 61, .7);
+    line-height: 1.45;
+    word-break: break-all;
+  }
+  .node-ports {
+    display: grid; grid-template-columns: 1fr 1fr;
+    padding: 6px 0; min-height: 28px;
+  }
+  .ports-col { display: flex; flex-direction: column; gap: 4px; }
+  .port-row {
+    position: relative; height: 22px; display: flex; align-items: center;
+    font-size: 11px; color: #c9d1d9; padding: 0 10px;
+  }
+  .ports-col.right .port-row { justify-content: flex-end; }
+  .port-dot {
+    position: absolute; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent); border: 2px solid #0d1117;
+  }
+  .ports-col.left .port-dot { left: -5px; }
+  .ports-col.right .port-dot { right: -5px; }
+  .port-dot.tap { background: var(--tap); }
+  .port-label { font-family: ui-monospace, monospace; }
+  .port-row.tap .port-label { color: var(--tap); }
+
+  .node-live {
+    padding: 5px 10px 7px;
+    background: rgba(13, 17, 23, .65);
+    border-top: 1px solid rgba(48, 54, 61, .7);
+    border-radius: 0 0 9px 9px;
+    font-size: 11px; font-family: ui-monospace, monospace;
+    color: var(--muted);
+  }
+  .live-bar-bg {
+    height: 3px; background: #21262d; border-radius: 2px; margin-top: 4px; overflow: hidden;
+  }
+  .live-bar-fill {
+    height: 100%; width: 0%; background: linear-gradient(90deg, #38bdf8, #10b981);
+    transition: width .12s linear;
+  }
+
+  .canvas-hint {
+    position: absolute; left: 12px; bottom: 12px;
+    background: rgba(22, 27, 34, .85); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 10px; font-size: 11px; color: var(--muted);
+    display: flex; gap: 12px; pointer-events: none;
+  }
+  .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+
+  .sidebar {
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+    padding: 12px; gap: 12px;
+  }
+  .card {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .card-title {
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .5px;
+    margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .kpi-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .kpi {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .kpi-label { font-size: 11px; color: var(--muted); }
+  .kpi-val {
+    font-size: 17px; font-weight: 700; margin-top: 2px;
+    font-family: ui-monospace, monospace; color: var(--text);
+  }
+  .loss-items {
+    display: flex; flex-direction: column; gap: 5px;
+    font-size: 12px; font-family: ui-monospace, monospace;
+  }
+  .loss-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 8px; background: var(--panel); border-radius: 5px;
+  }
+  .chart-box {
+    width: 100%; height: 175px;
+    background: #0d1117; border: 1px solid var(--border); border-radius: 6px;
+    position: relative;
+  }
+  .chart-legend {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 11px;
+    font-family: ui-monospace, monospace; color: var(--muted);
+  }
+  .log-list {
+    max-height: 175px; overflow-y: auto;
+    font-size: 11px; font-family: ui-monospace, monospace;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .log-item { padding: 4px 6px; border-radius: 4px; background: var(--panel); line-height: 1.4; }
+  .log-item.error { color: #fb7185; border-left: 2px solid #f43f5e; }
+  .log-item.warning { color: #fbbf24; border-left: 2px solid #f59e0b; }
+  .log-item.info { color: #93c5fd; border-left: 2px solid #3b82f6; }
+
+  .edge-label-bg { fill: #0d1117; stroke: #30363d; stroke-width: 1; rx: 4; }
+  .edge-label-txt { fill: #9ca3af; font-size: 10px; font-family: ui-monospace, monospace; text-anchor: middle; dominant-baseline: central; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="brand-dot"></span>NetPulse WebUI</div>
+    <div class="divider"></div>
+    <select id="graphSelect" title="选择计算图"></select>
+    <span id="ercBadge" class="badge pass">ERC 检查中</span>
+    <button id="fitBtn" title="自适应缩放对齐画布">适应画布</button>
+    <div class="divider"></div>
+    <button id="startBtn" class="primary">开始训练</button>
+    <button id="pauseBtn" class="warn" disabled>暂停</button>
+    <button id="stopBtn" class="danger" disabled>停止</button>
+    <div class="divider"></div>
+    <div class="speed-box">
+      <span>步进延迟</span>
+      <input id="speedSlider" type="range" min="0" max="800" step="20" value="150" />
+      <span id="speedVal" class="speed-val">150 ms</span>
+    </div>
+    <div class="speed-box">
+      <span>Epochs</span>
+      <input id="epochsInput" type="number" min="1" max="500" placeholder="默认" />
+      <span>LR</span>
+      <input id="lrInput" type="number" step="0.0005" min="0.00001" placeholder="默认" style="width:82px" />
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section id="canvasWrap" class="canvas-wrap">
+      <div id="stage" class="stage">
+        <svg id="edgesSvg" class="edges-layer">
+          <defs>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+              <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+          <g id="edgesGroup"></g>
+          <g id="pulsesGroup"></g>
+        </svg>
+        <div id="nodesLayer" class="nodes-layer"></div>
+      </div>
+      <div class="canvas-hint">
+        <span><i class="legend-dot" style="background:var(--source)"></i>Source</span>
+        <span><i class="legend-dot" style="background:var(--backbone)"></i>Backbone</span>
+        <span><i class="legend-dot" style="background:var(--op)"></i>Op/Bridge</span>
+        <span><i class="legend-dot" style="background:var(--loss)"></i>Loss</span>
+        <span><i class="legend-dot" style="background:var(--tap)"></i>Tap 虚线抽头</span>
+        <span>| 拖拽节点移动 · 空白拖拽平移 · 滚轮缩放</span>
+      </div>
+    </section>
+
+    <aside class="sidebar">
+      <div class="card">
+        <div class="card-title">
+          <span>训练状态</span>
+          <span id="wsBadge" style="font-size:11px;color:var(--muted)">WS 连接中...</span>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi"><div class="kpi-label">Epoch / Step</div><div id="kpiStep" class="kpi-val">-</div></div>
+          <div class="kpi"><div class="kpi-label">Total Loss</div><div id="kpiLoss" class="kpi-val">-</div></div>
+          <div class="kpi"><div class="kpi-label">Batch Acc</div><div id="kpiBatchAcc" class="kpi-val">-</div></div>
+          <div class="kpi"><div class="kpi-label">Val Acc / Loss</div><div id="kpiVal" class="kpi-val">-</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span>分项 Loss 汇集</span></div>
+        <div id="lossItems" class="loss-items">
+          <div style="color:var(--muted)">点击“开始训练”查看实时分项指标</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>Loss 实时曲线</span>
+          <span id="chartRange" style="font-size:11px;font-family:ui-monospace,monospace">-</span>
+        </div>
+        <div class="chart-box">
+          <svg id="lossChart" width="100%" height="100%" viewBox="0 0 320 175" preserveAspectRatio="none"></svg>
+        </div>
+        <div id="chartLegend" class="chart-legend"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span>ERC 校验与拓扑诊断</span></div>
+        <div id="ercLogs" class="log-list"></div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script>
+const NODE_W = 224;
+const state = {
+  graph: null,
+  positions: {},
+  pan: { x: 20, y: 20 },
+  scale: 1.0,
+  running: false,
+  paused: false,
+  history: [],
+  lossSeries: {},
+  ws: null,
+  nodeEls: {},
+  edgeMeta: [],
+  lastPulseTs: 0,
+};
+
+const PALETTE = ["#38bdf8", "#34d399", "#fbbf24", "#f472b6", "#a78bfa"];
+const $ = (id) => document.getElementById(id);
+
+function applyTransform() {
+  $("stage").style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.scale})`;
+}
+
+function summarizeParams(type, params) {
+  if (!params || Object.keys(params).length === 0) return "默认参数";
+  const pick = [];
+  for (const [k, v] of Object.entries(params)) {
+    if (k === "data_dir") continue;
+    const valStr = Array.isArray(v) ? `[${v.join(",")}]` : (typeof v === "object" ? JSON.stringify(v) : String(v));
+    pick.push(`${k}=${valStr}`);
+    if (pick.length >= 4) break;
+  }
+  return pick.join(" · ");
+}
+
+function getPortPos(nodeId, portName, side, isTap = false) {
+  const pos = state.positions[nodeId] || { x: 0, y: 0 };
+  const el = state.nodeEls[nodeId];
+  if (!el) return { x: pos.x + (side === "left" ? 0 : NODE_W), y: pos.y + 60 };
+  const selector = side === "left"
+    ? `.ports-col.left .port-row[data-port="${portName}"]`
+    : `.ports-col.right .port-row[data-port="${portName}"][data-tap="${isTap ? "1" : "0"}"]`;
+  const row = el.querySelector(selector);
+  const yOffset = row ? (row.offsetTop + row.offsetHeight / 2) : 60;
+  return {
+    x: pos.x + (side === "left" ? 0 : NODE_W),
+    y: pos.y + yOffset,
+  };
+}
+
+function renderEdges() {
+  const group = $("edgesGroup");
+  group.innerHTML = "";
+  state.edgeMeta = [];
+  if (!state.graph) return;
+
+  for (const edge of state.graph.edges) {
+    const isTap = edge.edge_kind === "tap";
+    const p1 = getPortPos(edge.src_node, edge.src_port, "right", isTap);
+    const p2 = getPortPos(edge.dst_node, edge.dst_port, "left", false);
+    const dx = Math.max(48, Math.abs(p2.x - p1.x) * 0.45);
+    const d = `M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y}, ${p2.x - dx} ${p2.y}, ${p2.x} ${p2.y}`;
+
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    const color = isTap ? "#fbbf24" : (edge.autobridge ? "#a855f7" : "#38bdf8");
+    path.setAttribute("stroke", color);
+    path.setAttribute("stroke-width", isTap ? "2" : "2.2");
+    path.setAttribute("stroke-opacity", "0.72");
+    if (isTap) path.setAttribute("stroke-dasharray", "6 4");
+    group.appendChild(path);
+
+    // 形状或 AutoBridge 标签
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    let labelText = edge.shape ? `(${edge.shape.join(",")})` : "";
+    if (edge.autobridge) {
+      labelText = `AutoBridge ${edge.autobridge.from.join("×")}→${edge.autobridge.to.join("×")}`;
+    }
+    if (labelText) {
+      const w = Math.max(44, labelText.length * 6.4 + 10);
+      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rect.setAttribute("x", midX - w / 2);
+      rect.setAttribute("y", midY - 9);
+      rect.setAttribute("width", w);
+      rect.setAttribute("height", 18);
+      rect.setAttribute("class", "edge-label-bg");
+      group.appendChild(rect);
+
+      const txt = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      txt.setAttribute("x", midX);
+      txt.setAttribute("y", midY);
+      txt.setAttribute("class", "edge-label-txt");
+      txt.textContent = labelText;
+      group.appendChild(txt);
+    }
+
+    state.edgeMeta.push({ edge, path, color });
+  }
+}
+
+function renderGraph(data) {
+  state.graph = data;
+  state.positions = {};
+  state.nodeEls = {};
+  const layer = $("nodesLayer");
+  layer.innerHTML = "";
+
+  // ERC 状态与日志
+  const ercBadge = $("ercBadge");
+  if (data.erc.passed) {
+    ercBadge.className = "badge pass";
+    ercBadge.textContent = `ERC PASS · ${data.nodes.length} 节点`;
+  } else {
+    ercBadge.className = "badge fail";
+    ercBadge.textContent = `ERC FAIL`;
+  }
+  const logsEl = $("ercLogs");
+  logsEl.innerHTML = "";
+  const topoDiv = document.createElement("div");
+  topoDiv.className = "log-item info";
+  topoDiv.textContent = `拓扑序: ${data.erc.topo_order.join(" → ")}`;
+  logsEl.appendChild(topoDiv);
+  for (const d of data.erc.diagnostics) {
+    const div = document.createElement("div");
+    div.className = `log-item ${d.level}`;
+    div.textContent = `[${d.code}] ${d.message}`;
+    logsEl.appendChild(div);
+  }
+
+  // 默认训练参数显示
+  $("epochsInput").placeholder = String(data.trainer.epochs);
+  $("lrInput").placeholder = String(data.trainer.lr);
+
+  // Loss 权重列表初态
+  renderLossItems(null);
+
+  for (const node of data.nodes) {
+    state.positions[node.id] = { ...node.position };
+    const card = document.createElement("div");
+    card.className = "node-card";
+    card.dataset.cat = node.category;
+    card.dataset.id = node.id;
+    card.style.left = `${node.position.x}px`;
+    card.style.top = `${node.position.y}px`;
+
+    const inHtml = node.inputs.map((p) =>
+      `<div class="port-row" data-port="${p}"><span class="port-dot"></span><span class="port-label">${p}</span></div>`
+    ).join("");
+
+    const outHtml = node.outputs.map((p) =>
+      `<div class="port-row" data-port="${p}" data-tap="0"><span class="port-label">${p}</span><span class="port-dot"></span></div>`
+    ).join("");
+
+    const tapHtml = node.taps.map((t) =>
+      `<div class="port-row tap" data-port="${t}" data-tap="1"><span class="port-label">tap:${t}</span><span class="port-dot tap"></span></div>`
+    ).join("");
+
+    const shapeEntry = Object.entries(node.out_specs || {})[0];
+    const staticShape = shapeEntry ? `shape=(${shapeEntry[1].shape.join(",")})` : "ready";
+
+    card.innerHTML = `
+      <div class="node-head">
+        <span class="node-title">${node.id}</span>
+        <span class="node-type">${node.type}</span>
+      </div>
+      <div class="node-params">${summarizeParams(node.type, node.params)}</div>
+      <div class="node-ports">
+        <div class="ports-col left">${inHtml}</div>
+        <div class="ports-col right">${outHtml}${tapHtml}</div>
+      </div>
+      <div class="node-live">
+        <div class="live-text">${staticShape}</div>
+        <div class="live-bar-bg"><div class="live-bar-fill"></div></div>
+      </div>
+    `;
+
+    // 节点拖拽
+    const head = card.querySelector(".node-head");
+    head.addEventListener("mousedown", (ev) => {
+      ev.stopPropagation();
+      const startX = ev.clientX;
+      const startY = ev.clientY;
+      const origX = state.positions[node.id].x;
+      const origY = state.positions[node.id].y;
+      const onMove = (mv) => {
+        const dx = (mv.clientX - startX) / state.scale;
+        const dy = (mv.clientY - startY) / state.scale;
+        state.positions[node.id].x = origX + dx;
+        state.positions[node.id].y = origY + dy;
+        card.style.left = `${origX + dx}px`;
+        card.style.top = `${origY + dy}px`;
+        renderEdges();
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    });
+
+    layer.appendChild(card);
+    state.nodeEls[node.id] = card;
+  }
+
+  requestAnimationFrame(() => {
+    renderEdges();
+    fitView();
+  });
+}
+
+function fitView() {
+  const keys = Object.keys(state.positions);
+  if (!keys.length) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const id of keys) {
+    const p = state.positions[id];
+    const h = state.nodeEls[id]?.offsetHeight || 130;
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + NODE_W);
+    maxY = Math.max(maxY, p.y + h);
+  }
+  const wrap = $("canvasWrap");
+  const pad = 48;
+  const availW = wrap.clientWidth - pad * 2;
+  const availH = wrap.clientHeight - pad * 2;
+  const contentW = Math.max(200, maxX - minX);
+  const contentH = Math.max(200, maxY - minY);
+  const s = Math.min(1.15, Math.max(0.35, Math.min(availW / contentW, availH / contentH)));
+  state.scale = s;
+  state.pan.x = pad - minX * s + (availW - contentW * s) / 2;
+  state.pan.y = pad - minY * s + (availH - contentH * s) / 2;
+  applyTransform();
+}
+
+function emitEdgePulses(nodeStats, tapStats) {
+  const now = performance.now();
+  if (now - state.lastPulseTs < 55) return;
+  state.lastPulseTs = now;
+
+  const pulsesGroup = $("pulsesGroup");
+  const delay = Number($("speedSlider").value);
+  const duration = Math.max(180, Math.min(650, delay > 0 ? delay * 0.85 : 220));
+
+  for (const item of state.edgeMeta) {
+    const { edge, path, color } = item;
+    const isTap = edge.edge_kind === "tap";
+    const active = isTap
+      ? Boolean(tapStats && tapStats[`${edge.src_node}.${edge.src_port}`])
+      : Boolean(nodeStats && nodeStats[edge.src_node]);
+    if (!active) continue;
+
+    const len = path.getTotalLength();
+    if (!len || len < 5) continue;
+
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("r", isTap ? "4.5" : "5");
+    dot.setAttribute("fill", color);
+    dot.setAttribute("filter", "url(#glow)");
+    pulsesGroup.appendChild(dot);
+
+    const t0 = performance.now();
+    const tick = (t) => {
+      const p = Math.min(1, (t - t0) / duration);
+      const pt = path.getPointAtLength(len * p);
+      dot.setAttribute("cx", pt.x);
+      dot.setAttribute("cy", pt.y);
+      dot.setAttribute("opacity", String(1 - p * 0.35));
+      if (p < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        dot.remove();
+      }
+    };
+    requestAnimationFrame(tick);
+  }
+}
+
+function updateNodeLiveStats(nodeStats, tapStats) {
+  for (const [nid, card] of Object.entries(state.nodeEls)) {
+    const ports = nodeStats?.[nid];
+    if (!ports) continue;
+    const firstKey = Object.keys(ports)[0];
+    const st = firstKey ? ports[firstKey] : null;
+    if (!st) continue;
+    card.classList.add("active");
+    setTimeout(() => card.classList.remove("active"), 180);
+
+    const txt = card.querySelector(".live-text");
+    const bar = card.querySelector(".live-bar-fill");
+    txt.textContent = `norm=${st.norm.toFixed(2)} μ=${st.mean.toFixed(2)} σ=${st.std.toFixed(2)}`;
+    const pct = Math.min(100, Math.max(8, Math.log1p(st.norm) * 24));
+    bar.style.width = `${pct}%`;
+  }
+  emitEdgePulses(nodeStats, tapStats);
+}
+
+function renderLossItems(lossDict) {
+  const container = $("lossItems");
+  if (!state.graph) return;
+  const weights = {};
+  for (const lc of state.graph.losses || []) {
+    weights[lc.node_id] = lc.weight;
+  }
+  if (!lossDict) {
+    const entries = Object.entries(weights);
+    container.innerHTML = entries.length
+      ? entries.map(([k, w]) => `<div class="loss-row"><span>${k} (w=${w})</span><span style="color:var(--muted)">-</span></div>`).join("")
+      : `<div style="color:var(--muted)">无 Loss 节点</div>`;
+    return;
+  }
+  container.innerHTML = Object.entries(lossDict).map(([k, v]) => {
+    const w = weights[k] !== undefined ? weights[k] : 1.0;
+    return `<div class="loss-row"><span>${k} <small style="color:var(--muted)">(w=${w})</small></span><span>${Number(v).toFixed(4)}</span></div>`;
+  }).join("");
+}
+
+function renderLossChart() {
+  const svg = $("lossChart");
+  const legend = $("chartLegend");
+  const pts = state.history;
+  if (!pts.length) {
+    svg.innerHTML = "";
+    legend.innerHTML = "";
+    $("chartRange").textContent = "-";
+    return;
+  }
+  const keys = ["total_loss", ...Object.keys(state.lossSeries)];
+  let minY = Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    if (p.total_loss < minY) minY = p.total_loss;
+    if (p.total_loss > maxY) maxY = p.total_loss;
+    for (const k of Object.keys(state.lossSeries)) {
+      const v = p.loss_dict?.[k];
+      if (v !== undefined) {
+        if (v < minY) minY = v;
+        if (v > maxY) maxY = v;
+      }
+    }
+  }
+  if (!isFinite(minY) || minY === maxY) { minY = 0; maxY = Math.max(1, maxY + 0.1); }
+  const padY = (maxY - minY) * 0.08;
+  minY = Math.max(0, minY - padY);
+  maxY = maxY + padY;
+  $("chartRange").textContent = `${minY.toFixed(3)} ~ ${maxY.toFixed(3)}`;
+
+  const W = 320, H = 175, M = 8;
+  const mapX = (i) => pts.length === 1 ? W / 2 : M + (i / (pts.length - 1)) * (W - M * 2);
+  const mapY = (v) => H - M - ((v - minY) / Math.max(1e-6, maxY - minY)) * (H - M * 2);
+
+  let html = "";
+  for (let g = 1; g <= 3; g++) {
+    const gy = M + ((H - M * 2) * g) / 4;
+    html += `<line x1="0" y1="${gy}" x2="${W}" y2="${gy}" stroke="#1f2937" stroke-width="1" />`;
+  }
+
+  legend.innerHTML = "";
+  keys.forEach((k, idx) => {
+    const color = PALETTE[idx % PALETTE.length];
+    const coords = [];
+    pts.forEach((p, i) => {
+      const v = k === "total_loss" ? p.total_loss : p.loss_dict?.[k];
+      if (v !== undefined) coords.push(`${mapX(i).toFixed(1)},${mapY(v).toFixed(1)}`);
+    });
+    if (coords.length >= 2) {
+      html += `<polyline fill="none" stroke="${color}" stroke-width="${k === 'total_loss' ? 2.2 : 1.5}" points="${coords.join(" ")}" />`;
+    }
+    legend.innerHTML += `<span><i class="legend-dot" style="background:${color}"></i>${k}</span>`;
+  });
+  svg.innerHTML = html;
+}
+
+function setTrainButtons(running, paused) {
+  state.running = running;
+  state.paused = paused;
+  $("startBtn").disabled = running;
+  $("pauseBtn").disabled = !running;
+  $("stopBtn").disabled = !running;
+  $("pauseBtn").textContent = paused ? "继续" : "暂停";
+}
+
+async function loadGraphs() {
+  const res = await fetch("/api/graphs");
+  const data = await res.json();
+  const sel = $("graphSelect");
+  sel.innerHTML = data.graphs.map((g) => `<option value="${g}">${g}</option>`).join("");
+  if (data.status.graph_name && data.graphs.includes(data.status.graph_name)) {
+    sel.value = data.status.graph_name;
+  } else if (data.graphs.includes("mnist_atomic.json")) {
+    sel.value = "mnist_atomic.json";
+  }
+  setTrainButtons(data.status.running, data.status.paused);
+  $("speedSlider").value = String(data.status.step_delay_ms);
+  $("speedVal").textContent = `${data.status.step_delay_ms} ms`;
+  if (sel.value) await loadGraph(sel.value);
+}
+
+async function loadGraph(name) {
+  const res = await fetch(`/api/graph?name=${encodeURIComponent(name)}`);
+  const data = await res.json();
+  renderGraph(data);
+}
+
+function connectWS() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  const ws = new WebSocket(`${proto}//${location.host}/ws`);
+  state.ws = ws;
+  ws.onopen = () => { $("wsBadge").textContent = "WS 已连接"; $("wsBadge").style.color = "#34d399"; };
+  ws.onclose = () => {
+    $("wsBadge").textContent = "WS 重连中..."; $("wsBadge").style.color = "#fbbf24";
+    setTimeout(connectWS, 1500);
+  };
+  ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "train_started") {
+      state.history = [];
+      state.lossSeries = {};
+      $("kpiVal").textContent = "-";
+      setTrainButtons(true, false);
+    } else if (msg.type === "step") {
+      $("kpiStep").textContent = `E${msg.epoch}/${msg.epochs} · #${msg.step}`;
+      $("kpiLoss").textContent = msg.total_loss.toFixed(4);
+      $("kpiBatchAcc").textContent = msg.batch_acc !== null ? `${(msg.batch_acc * 100).toFixed(1)}%` : "-";
+      renderLossItems(msg.loss_dict);
+
+      state.history.push(msg);
+      if (state.history.length > 200) state.history.shift();
+      for (const k of Object.keys(msg.loss_dict || {})) state.lossSeries[k] = true;
+      renderLossChart();
+      updateNodeLiveStats(msg.node_stats, msg.tap_stats);
+    } else if (msg.type === "eval") {
+      const accStr = msg.val_acc !== null ? `${(msg.val_acc * 100).toFixed(1)}%` : "-";
+      $("kpiVal").textContent = `${accStr} / ${msg.val_loss.toFixed(3)}`;
+    } else if (msg.type === "train_finished") {
+      setTrainButtons(false, false);
+    } else if (msg.type === "train_error") {
+      setTrainButtons(false, false);
+      const div = document.createElement("div");
+      div.className = "log-item error";
+      div.textContent = `[TRAIN_ERROR] ${msg.message}`;
+      $("ercLogs").prepend(div);
+    }
+  };
+}
+
+// 画布平移与缩放
+const wrap = $("canvasWrap");
+wrap.addEventListener("mousedown", (ev) => {
+  if (ev.target.closest(".node-card")) return;
+  wrap.classList.add("grabbing");
+  const sx = ev.clientX - state.pan.x;
+  const sy = ev.clientY - state.pan.y;
+  const onMove = (mv) => {
+    state.pan.x = mv.clientX - sx;
+    state.pan.y = mv.clientY - sy;
+    applyTransform();
+  };
+  const onUp = () => {
+    wrap.classList.remove("grabbing");
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+  };
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+});
+
+wrap.addEventListener("wheel", (ev) => {
+  ev.preventDefault();
+  const rect = wrap.getBoundingClientRect();
+  const mx = ev.clientX - rect.left;
+  const my = ev.clientY - rect.top;
+  const factor = ev.deltaY < 0 ? 1.08 : 0.92;
+  const nextScale = Math.min(2.0, Math.max(0.3, state.scale * factor));
+  state.pan.x = mx - ((mx - state.pan.x) / state.scale) * nextScale;
+  state.pan.y = my - ((my - state.pan.y) / state.scale) * nextScale;
+  state.scale = nextScale;
+  applyTransform();
+}, { passive: false });
+
+$("graphSelect").addEventListener("change", (e) => loadGraph(e.target.value));
+$("fitBtn").addEventListener("click", fitView);
+
+$("speedSlider").addEventListener("input", async (e) => {
+  const val = Number(e.target.value);
+  $("speedVal").textContent = val === 0 ? "0 ms (全速)" : `${val} ms`;
+  await fetch("/api/train/speed", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ step_delay_ms: val }),
+  });
+});
+
+$("startBtn").addEventListener("click", async () => {
+  const name = $("graphSelect").value;
+  const delay = Number($("speedSlider").value);
+  const epochs = $("epochsInput").value ? Number($("epochsInput").value) : null;
+  const lr = $("lrInput").value ? Number($("lrInput").value) : null;
+  await fetch("/api/train/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ graph_name: name, step_delay_ms: delay, epochs, lr }),
+  });
+});
+
+$("pauseBtn").addEventListener("click", async () => {
+  const nextPaused = !state.paused;
+  const delay = Number($("speedSlider").value);
+  const res = await fetch("/api/train/speed", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ step_delay_ms: delay, paused: nextPaused }),
+  });
+  const data = await res.json();
+  setTrainButtons(data.running, data.paused);
+});
+
+$("stopBtn").addEventListener("click", async () => {
+  await fetch("/api/train/stop", { method: "POST" });
+  setTrainButtons(false, false);
+});
+
+loadGraphs();
+connectWS();
+</script>
+</body>
+</html>
