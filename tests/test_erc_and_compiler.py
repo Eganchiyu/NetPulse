@@ -173,3 +173,18 @@ class CustomScale(BaseComponent):
     x = torch.ones(4, 2)
     out = compiled({"src": {"x": Signal(data=x, meta={"layout": "BD"}), "y": Signal(data=torch.zeros(4, dtype=torch.long), meta={"layout": "B"})}}, mode="infer")
     assert torch.allclose(out.outputs["sc"]["out"].data, torch.full((4, 2), 3.0))
+
+
+def test_plugin_error_isolation(tmp_path: Path) -> None:
+    bad_plugin = tmp_path / "broken_plugin.py"
+    bad_plugin.write_text("raise RuntimeError('boom')\n", encoding="utf-8")
+
+    pkg_dir = tmp_path / "good_pkg"
+    pkg_dir.mkdir()
+    (pkg_dir / "__init__.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    reg = ComponentRegistry()
+    loaded = reg.load_plugins(tmp_path)
+    assert str(pkg_dir / "__init__.py") in loaded
+    assert str(bad_plugin) in reg.plugin_errors
+    assert "RuntimeError" in reg.plugin_errors[str(bad_plugin)]

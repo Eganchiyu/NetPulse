@@ -9,7 +9,7 @@ import torch.nn as nn
 from netpulse.components.init_utils import apply_init
 from netpulse.core.component import BaseComponent
 from netpulse.core.registry import register_component
-from netpulse.core.types import ComponentSignature, PortSpec, ResolvedSpec, Signal, TapSpec
+from netpulse.core.types import ComponentSignature, ParamSpec, PortSpec, ResolvedSpec, Signal, TapSpec
 
 
 def _make_activation(name: str) -> nn.Module:
@@ -129,6 +129,22 @@ class CNNBlock(BaseComponent):
     """可配置多层 2D CNN 宏元件，支持逐层核/池化配置与初始化，暴露每层 Tap。"""
 
     category = "backbone"
+    display_name = "CNN Block"
+    description = "多层 2D CNN 宏模块（每层暴露 Hook Tap）"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("channels", "json", [16, 32], description="各层输出通道列表"),
+            ParamSpec("kernel_size", "json", 3, description="卷积核尺寸（标量或列表）"),
+            ParamSpec("stride", "json", 1, description="步长（标量或列表）"),
+            ParamSpec("activation", "select", "relu", options=["relu", "gelu", "silu", "tanh", "none"], description="激活函数"),
+            ParamSpec("pool_every", "int", 1, min=0, max=8, step=1, description="每隔多少层池化（0关闭）"),
+            ParamSpec("pool_type", "select", "max", options=["max", "avg"], description="池化类型"),
+            ParamSpec("pool_size", "int", 2, min=1, max=4, step=1, description="池化窗口"),
+            ParamSpec("in_channels", "int", None, min=1, max=2048, step=1, description="可选：强制输入通道校验"),
+            ParamSpec("init", "select", None, options=["", "kaiming_normal", "xavier_normal", "orthogonal"], description="权重初始化"),
+        ]
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
@@ -154,20 +170,21 @@ class CNNBlock(BaseComponent):
         actual: ResolvedSpec,
         resolved_in_specs: dict[str, ResolvedSpec],
     ) -> Optional[ResolvedSpec]:
-        if port_name == "x" and "in_channels" in params:
+        if port_name == "x" and params.get("in_channels") is not None:
             c = int(params["in_channels"])
             b, _, h, w = actual.shape
             return ResolvedSpec(shape=(b, c, h, w), dtype=actual.dtype, layout="BCHW", has_mask=actual.has_mask)
         return None
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
-        in_channels = int(params.get("in_channels", in_specs["x"].shape[1]))
+        raw_in = params.get("in_channels")
+        in_channels = int(raw_in if raw_in is not None else in_specs["x"].shape[1])
         layer_cfgs = _normalize_cnn_layer_cfgs(params)
         return _CNNModule(
             in_channels=in_channels,
             layer_cfgs=layer_cfgs,
-            weight_init=params.get("init"),
-            bias_init=params.get("bias_init"),
+            weight_init=params.get("init") or None,
+            bias_init=params.get("bias_init") or None,
         )
 
 
@@ -221,6 +238,19 @@ class MLPBlock(BaseComponent):
     """可配置多层 MLP 宏元件（支持 BD 与 BLD 布局、统一初始化与 forward_with_taps）。"""
 
     category = "backbone"
+    display_name = "MLP Block"
+    description = "多层全连接宏模块（支持 BD / BLD 与每层 Tap 抽头）"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("dims", "json", [64, 10], description="各层输出维度列表"),
+            ParamSpec("activation", "select", "relu", options=["relu", "gelu", "silu", "tanh", "none"], description="激活函数"),
+            ParamSpec("activate_last", "bool", False, description="最后一层是否加激活"),
+            ParamSpec("dropout", "float", 0.0, min=0.0, max=0.9, step=0.05, description="层间 Dropout"),
+            ParamSpec("in_dim", "int", None, min=1, max=8192, step=1, description="可选：强制输入维度校验"),
+            ParamSpec("init", "select", None, options=["", "kaiming_normal", "xavier_normal", "orthogonal"], description="权重初始化"),
+        ]
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
@@ -246,14 +276,15 @@ class MLPBlock(BaseComponent):
         actual: ResolvedSpec,
         resolved_in_specs: dict[str, ResolvedSpec],
     ) -> Optional[ResolvedSpec]:
-        if port_name == "x" and "in_dim" in params:
+        if port_name == "x" and params.get("in_dim") is not None:
             d = int(params["in_dim"])
             new_shape = actual.shape[:-1] + (d,)
             return ResolvedSpec(shape=new_shape, dtype=actual.dtype, layout=actual.layout, has_mask=actual.has_mask)
         return None
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
-        in_dim = int(params.get("in_dim", in_specs["x"].shape[-1]))
+        raw_in = params.get("in_dim")
+        in_dim = int(raw_in if raw_in is not None else in_specs["x"].shape[-1])
         dims = [int(d) for d in params.get("dims", [64, 10])]
         activation = str(params.get("activation", "relu"))
         activate_last = bool(params.get("activate_last", False))
@@ -264,6 +295,6 @@ class MLPBlock(BaseComponent):
             activation=activation,
             activate_last=activate_last,
             dropout=dropout,
-            weight_init=params.get("init"),
-            bias_init=params.get("bias_init"),
+            weight_init=params.get("init") or None,
+            bias_init=params.get("bias_init") or None,
         )

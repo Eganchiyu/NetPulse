@@ -66,3 +66,12 @@ class GraphIR(BaseModel):
 
     def to_json(self, indent: int = 2) -> str:
         return self.model_dump_json(indent=indent)
+
+    def to_file(self, path: str | Path) -> None:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if p.suffix.lower() in {".yaml", ".yml"}:
+            text = yaml.safe_dump(self.model_dump(), allow_unicode=True, sort_keys=False)
+        else:
+            text = self.to_json(indent=2) + "\n"
+        p.write_text(text, encoding="utf-8")

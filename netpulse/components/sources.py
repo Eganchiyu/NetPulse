@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from netpulse.core.component import BaseComponent
 from netpulse.core.registry import register_component
-from netpulse.core.types import ComponentSignature, PortSpec, ResolvedSpec, Signal
+from netpulse.core.types import ComponentSignature, ParamSpec, PortSpec, ResolvedSpec, Signal
 
 
 class _SourceModule(nn.Module):
@@ -55,6 +55,16 @@ class SpiralData(BaseComponent):
     """内置秒开 2D 螺旋分类合成数据源。"""
 
     category = "source"
+    display_name = "Spiral Data"
+    description = "2D 螺旋多分类合成数据源（秒开，适合快速实验）"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("num_classes", "int", 3, min=2, max=20, step=1, description="分类数"),
+            ParamSpec("points_per_class", "int", 200, min=20, max=5000, step=20, description="每类样本数"),
+            ParamSpec("noise", "float", 0.15, min=0.0, max=1.0, step=0.01, description="角度高斯噪声"),
+        ]
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
@@ -163,6 +173,16 @@ class MNISTData(BaseComponent):
     """内置纯 PyTorch 轻量 MNIST 数据源（零 torchvision 依赖，自动缓存）。"""
 
     category = "source"
+    display_name = "MNIST Data"
+    description = "手写数字数据集（1×28×28 灰度图，10 分类）"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("subset_train", "int", 1024, min=32, max=60000, step=64, description="训练子集样本数（留空全量）"),
+            ParamSpec("subset_val", "int", 256, min=32, max=10000, step=32, description="验证子集样本数（留空全量）"),
+            ParamSpec("normalize", "bool", True, description="是否做均值方差标准化"),
+        ]
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:

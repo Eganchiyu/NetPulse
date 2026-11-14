@@ -10,7 +10,7 @@ import torch.nn.functional as F
 
 from netpulse.core.component import BaseComponent
 from netpulse.core.registry import register_component
-from netpulse.core.types import ComponentSignature, PortSpec, ResolvedSpec, Signal
+from netpulse.core.types import ComponentSignature, ParamSpec, PortSpec, ResolvedSpec, Signal
 
 
 class _CrossEntropyModule(nn.Module):
@@ -26,6 +26,8 @@ class CrossEntropyLoss(BaseComponent):
     """多分类交叉熵监督目标节点。"""
 
     category = "loss"
+    display_name = "CrossEntropyLoss"
+    description = "多分类交叉熵监督损失目标"
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
@@ -76,6 +78,14 @@ class ActivationRegLoss(BaseComponent):
     """隐层激活精确正则化节点（支持 l1 / l2 / orthogonal）。"""
 
     category = "loss"
+    display_name = "ActivationRegLoss"
+    description = "可精确计算的隐层激活正则项（L1 / L2 / 正交去相关）"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("mode", "select", "orthogonal", options=["l1", "l2", "orthogonal"], description="正则化模式"),
+        ]
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:

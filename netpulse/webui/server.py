@@ -3,20 +3,69 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
+import logging
+import urllib.parse
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Optional
 
 from aiohttp import web
+from pydantic import ValidationError
 
 from netpulse.core.erc import run_erc
 from netpulse.core.ir import GraphIR
-from netpulse.core.registry import get_default_registry
+from netpulse.core.registry import ComponentRegistry, get_default_registry
 from netpulse.webui.runner import LiveSessionConfig, LiveTrainRunner
 
+logger = logging.getLogger(__name__)
 
-def _compute_auto_layout(graph: GraphIR, topo_order: list[str]) -> dict[str, dict[str, float]]:
+_RUNNER_KEY = web.AppKey("runner", LiveTrainRunner)
+_BROADCASTER_KEY = web.AppKey("broadcaster_task", asyncio.Task)
+
+
+def _is_loopback(host: Optional[str]) -> bool:
+    if not host:
+        return False
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _create_origin_only_middleware():
+    """借鉴 ComfyUI：本地环回服务防跨站 Origin 伪造请求。"""
+
+    @web.middleware
+    async def origin_only_middleware(request: web.Request, handler):
+        if request.headers.get("Sec-Fetch-Site") == "cross-site":
+            return web.json_response({"error": "Cross-site request blocked"}, status=403)
+
+        if "Host" in request.headers and "Origin" in request.headers:
+            host_raw = request.headers["Host"].lower()
+            origin_parsed = urllib.parse.urlparse(request.headers["Origin"])
+            host_parsed = urllib.parse.urlsplit("//" + host_raw)
+            host_name = host_parsed.hostname
+            origin_host = (origin_parsed.hostname or "").lower()
+
+            if _is_loopback(host_name):
+                host_cmp = host_raw if origin_parsed.port is not None else host_name
+                origin_cmp = (origin_parsed.netloc or "").lower() if host_parsed.port is not None else origin_host
+                if host_cmp and origin_cmp and host_cmp != origin_cmp:
+                    logger.warning("Blocked mismatched Host/Origin: %s != %s", host_cmp, origin_cmp)
+                    return web.json_response({"error": "Origin mismatch"}, status=403)
+
+        if request.method == "OPTIONS":
+            return web.Response()
+        return await handler(request)
+
+    return origin_only_middleware
+
+
+def _compute_auto_layout(graph: GraphIR, topo_order: list[str], force_auto: bool = False) -> dict[str, dict[str, float]]:
     """根据拓扑层级计算清晰的左->右 DAG 节点坐标。"""
     node_map = {n.id: n for n in graph.nodes}
     order = topo_order if len(topo_order) == len(graph.nodes) else [n.id for n in graph.nodes]
@@ -36,13 +85,13 @@ def _compute_auto_layout(graph: GraphIR, topo_order: list[str]) -> dict[str, dic
 
     positions: dict[str, dict[str, float]] = {}
     col_gap = 270.0
-    row_gap = 150.0
+    row_gap = 155.0
     for layer_idx, nids in sorted(by_layer.items()):
         total_h = (len(nids) - 1) * row_gap
         start_y = 80.0 + max(0.0, (420.0 - total_h) / 2.0)
         for row_idx, nid in enumerate(nids):
             node = node_map[nid]
-            if node.position and "x" in node.position and "y" in node.position:
+            if not force_auto and node.position and "x" in node.position and "y" in node.position:
                 positions[nid] = {"x": float(node.position["x"]), "y": float(node.position["y"])}
             else:
                 positions[nid] = {
@@ -52,16 +101,26 @@ def _compute_auto_layout(graph: GraphIR, topo_order: list[str]) -> dict[str, dic
     return positions
 
 
-def _serialize_graph_payload(graph_path: Path, plugins_dir: Optional[str]) -> dict[str, Any]:
-    reg = get_default_registry(plugins_dir)
-    graph = GraphIR.from_file(graph_path)
+def serialize_graph_ir(
+    graph: GraphIR,
+    reg: ComponentRegistry,
+    file_name: str = "unsaved.json",
+    force_auto_layout: bool = False,
+) -> dict[str, Any]:
+    """对任意 GraphIR 运行 ERC 并序列化为 WebUI 载荷。"""
     erc = run_erc(graph, reg)
-    positions = _compute_auto_layout(graph, erc.topo_order)
+    positions = _compute_auto_layout(graph, erc.topo_order, force_auto=force_auto_layout)
 
     nodes_payload = []
     for node in graph.nodes:
         cls = reg.get(node.type) if reg.has(node.type) else None
         sig = erc.signatures.get(node.id)
+        if sig is None and cls is not None:
+            try:
+                sig = cls.declare_ports(node.params)
+            except Exception:
+                sig = None
+
         out_specs = {
             k: {"shape": list(v.shape), "layout": v.layout}
             for k, v in erc.node_out_specs.get(node.id, {}).items()
@@ -73,6 +132,7 @@ def _serialize_graph_payload(graph_path: Path, plugins_dir: Optional[str]) -> di
         nodes_payload.append({
             "id": node.id,
             "type": node.type,
+            "display_name": (cls.display_name or node.type) if cls else node.type,
             "category": cls.category if cls else "unknown",
             "params": node.params,
             "position": positions[node.id],
@@ -115,7 +175,7 @@ def _serialize_graph_payload(graph_path: Path, plugins_dir: Optional[str]) -> di
         })
 
     return {
-        "name": graph_path.name,
+        "name": file_name,
         "graph_name": graph.name,
         "nodes": nodes_payload,
         "edges": edges_payload,
@@ -138,6 +198,12 @@ def _serialize_graph_payload(graph_path: Path, plugins_dir: Optional[str]) -> di
     }
 
 
+def _serialize_graph_payload(graph_path: Path, plugins_dir: Optional[str]) -> dict[str, Any]:
+    reg = get_default_registry(plugins_dir)
+    graph = GraphIR.from_file(graph_path)
+    return serialize_graph_ir(graph, reg, file_name=graph_path.name)
+
+
 def create_app(
     graphs_dir: str | Path = "examples",
     plugins_dir: Optional[str] = "plugins",
@@ -155,7 +221,7 @@ def create_app(
 
     runner = LiveTrainRunner(_emit_from_worker)
 
-    async def _broadcaster(app: web.Application) -> None:
+    async def _broadcaster(_app: web.Application) -> None:
         try:
             while True:
                 payload = await msg_queue.get()
@@ -173,11 +239,11 @@ def create_app(
 
     async def on_startup(app: web.Application) -> None:
         event_loop_holder["loop"] = asyncio.get_running_loop()
-        app["broadcaster_task"] = asyncio.create_task(_broadcaster(app))
+        app[_BROADCASTER_KEY] = asyncio.create_task(_broadcaster(app))
 
     async def on_cleanup(app: web.Application) -> None:
         runner.stop()
-        task = app.get("broadcaster_task")
+        task = app.get(_BROADCASTER_KEY)
         if task:
             task.cancel()
             try:
@@ -194,8 +260,28 @@ def create_app(
         files = list(graphs_root.glob("*.json")) + list(graphs_root.glob("*.yaml")) + list(graphs_root.glob("*.yml"))
         return sorted(files, key=lambda p: p.name)
 
+    def _resolve_safe_save_path(raw_name: str) -> Optional[Path]:
+        name = Path(raw_name).name
+        if not name or name != raw_name or ".." in raw_name or "/" in raw_name or "\\" in raw_name:
+            return None
+        if Path(name).suffix.lower() not in {".json", ".yaml", ".yml"}:
+            name = f"{name}.json"
+        graphs_root.mkdir(parents=True, exist_ok=True)
+        root_resolved = graphs_root.resolve()
+        candidate = (graphs_root / name).resolve()
+        if candidate.parent != root_resolved:
+            return None
+        return candidate
+
     async def index(_request: web.Request) -> web.Response:
         return web.Response(text=html_path.read_text(encoding="utf-8"), content_type="text/html")
+
+    async def api_components(_request: web.Request) -> web.Response:
+        reg = get_default_registry(plugins_dir)
+        return web.json_response({
+            "components": reg.describe_all(),
+            "plugin_errors": reg.plugin_errors,
+        })
 
     async def api_graphs(_request: web.Request) -> web.Response:
         return web.json_response({
@@ -218,23 +304,70 @@ def create_app(
             return web.json_response({"error": f"找不到图文件: {name}"}, status=404)
         return web.json_response(_serialize_graph_payload(target, plugins_dir))
 
-    async def api_train_start(request: web.Request) -> web.Response:
-        body = await request.json()
-        name = body.get("graph_name")
-        files = {p.name: p for p in _list_graph_files()}
-        target = files.get(name) if name else (next(iter(files.values())) if files else None)
-        if target is None:
-            return web.json_response({"error": f"找不到图文件: {name}"}, status=404)
+    async def api_erc_check(request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "无效的 JSON 请求体"}, status=400)
+
+        raw_graph = body.get("graph", body) if isinstance(body, dict) else body
+        file_name = str(body.get("name", "draft.json")) if isinstance(body, dict) else "draft.json"
+        force_auto = bool(body.get("auto_layout", False)) if isinstance(body, dict) else False
+        try:
+            graph = GraphIR.model_validate(raw_graph)
+        except ValidationError as exc:
+            return web.json_response({"error": f"GraphIR 校验失败: {exc}"}, status=400)
 
         reg = get_default_registry(plugins_dir)
-        graph_ir = GraphIR.from_file(target)
+        return web.json_response(serialize_graph_ir(graph, reg, file_name=file_name, force_auto_layout=force_auto))
+
+    async def api_graph_save(request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "无效的 JSON 请求体"}, status=400)
+
+        raw_name = str(body.get("name", "")).strip()
+        target = _resolve_safe_save_path(raw_name)
+        if target is None:
+            return web.json_response({"error": "非法文件名（仅支持当前目录 .json/.yaml/.yml）"}, status=400)
+
+        try:
+            graph = GraphIR.model_validate(body.get("graph"))
+        except ValidationError as exc:
+            return web.json_response({"error": f"GraphIR 校验失败: {exc}"}, status=400)
+
+        graph.to_file(target)
+        reg = get_default_registry(plugins_dir)
+        payload = serialize_graph_ir(graph, reg, file_name=target.name)
+        return web.json_response({"ok": True, "name": target.name, "graph": payload})
+
+    async def api_train_start(request: web.Request) -> web.Response:
+        body = await request.json()
+        reg = get_default_registry(plugins_dir)
+
+        if "graph" in body and body["graph"] is not None:
+            try:
+                graph_ir = GraphIR.model_validate(body["graph"])
+            except ValidationError as exc:
+                return web.json_response({"error": f"GraphIR 校验失败: {exc}"}, status=400)
+            session_name = str(body.get("graph_name") or graph_ir.name or "custom_graph.json")
+        else:
+            name = body.get("graph_name")
+            files = {p.name: p for p in _list_graph_files()}
+            target = files.get(name) if name else (next(iter(files.values())) if files else None)
+            if target is None:
+                return web.json_response({"error": f"找不到图文件: {name}"}, status=404)
+            graph_ir = GraphIR.from_file(target)
+            session_name = target.name
+
         cfg = LiveSessionConfig(
             step_delay_ms=int(body.get("step_delay_ms", 150)),
             epochs=int(body["epochs"]) if body.get("epochs") else None,
             lr=float(body["lr"]) if body.get("lr") else None,
         )
-        runner.start(target.name, graph_ir, reg, cfg)
-        return web.json_response({"ok": True, "graph_name": target.name, "step_delay_ms": cfg.step_delay_ms})
+        runner.start(session_name, graph_ir, reg, cfg)
+        return web.json_response({"ok": True, "graph_name": session_name, "step_delay_ms": cfg.step_delay_ms})
 
     async def api_train_speed(request: web.Request) -> web.Response:
         body = await request.json()
@@ -265,11 +398,14 @@ def create_app(
             clients.discard(ws)
         return ws
 
-    app = web.Application()
+    app = web.Application(middlewares=[_create_origin_only_middleware()])
     app.add_routes([
         web.get("/", index),
+        web.get("/api/components", api_components),
         web.get("/api/graphs", api_graphs),
         web.get("/api/graph", api_graph),
+        web.post("/api/erc/check", api_erc_check),
+        web.post("/api/graph/save", api_graph_save),
         web.post("/api/train/start", api_train_start),
         web.post("/api/train/speed", api_train_speed),
         web.post("/api/train/stop", api_train_stop),
@@ -277,7 +413,7 @@ def create_app(
     ])
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
-    app["runner"] = runner
+    app[_RUNNER_KEY] = runner
     return app
 
 

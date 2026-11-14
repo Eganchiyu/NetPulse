@@ -28,3 +28,15 @@
 - 更新 `docs/design.md` 至 v0.2，同步双粒度元件库、Meta/AutoBridge 协议与外挂 WebUI 现状。
 - 新增 `docs/ARCHITECTURE.md`（完整分层架构、目录职责、编译/运行期数据流与交接约定）。
 - 初始化 Git 仓库，新增 `README.md`、`LICENSE`（GNU AGPL-3.0）与 `.gitignore`，完成初始版本提交。
+
+## 2026-11-14（ComfyUI 代码复用评估）
+- 浅克隆 `Comfy-Org/ComfyUI` 至工作区 `reference_comfyui/`（未纳入 git 追踪）。
+- 完成逐模块对比评估：核心执行引擎（解释型推理+缓存）与 NetPulse（`GraphCompiler` 编译为 `nn.Module` + `meta` ERC + `autograd` 训练）不兼容，不可照抄；外围基础设施（`server.py` 安全中间件与 `/object_info` 协议、`PromptQueue` 队列管理、`load_custom_node` 插件隔离加载、`graph_utils.add_graph_prefix` 子图展开、`progress.py` 进度回调抽象）及 GPL-3.0 许可证均可借鉴/改写复用。
+
+## 2026-11-14（借鉴 ComfyUI 升级 WebUI 为可编辑 IDE 及底层协议适配）
+- 核心协议扩展：
+  - `netpulse/core/types.py`、`component.py`、`ir.py` 新增 `ParamSpec` 参数契约、`BaseComponent.param_schema()`/`display_name`/`description`、`GraphIR.to_file()`；为全部 17 个内置元件补齐参数 Schema。
+  - `netpulse/core/registry.py` 新增 `describe_component()` / `describe_all()` 元数据导出，并增强 `load_plugins()` 支持包目录与单插件异常隔离。
+- WebUI 后端适配（`netpulse/webui/server.py`）：新增 `/api/components`、`/api/erc/check`（内存图实时 ERC 校验与自动排布）、`/api/graph/save`（含路径穿越防护）、支持直接传入内存 `GraphIR` 启动训练，并加入借鉴自 ComfyUI 的本地环回防跨站中间件与 `web.AppKey` 规范。
+- WebUI 前端升级（`netpulse/webui/index.html`）：新增左侧可折叠元件库面板、双击画布快速搜索建点、端口拖拽实时连线（含 Tap 虚线）、动态参数表单检查器（Inspector）、节点/连线删除与 `AutoBridge` 切换、撤销/重做（`Ctrl+Z/Y`）、自动排版、保存/另存为与右下角 Minimap。
+- 验证通过：`pytest tests -v` 13/13 全部通过。

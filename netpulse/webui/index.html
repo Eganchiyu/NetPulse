@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>NetPulse — 节点流计算图沙盒</title>
+<title>NetPulse WebUI — 节点流计算图沙盒</title>
 <style>
   :root {
     --bg: #0d1117;
@@ -19,6 +19,7 @@
     --loss: #f43f5e;
     --tap: #fbbf24;
     --accent: #38bdf8;
+    --danger: #fb7185;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -29,99 +30,162 @@
   }
   .app {
     display: grid;
-    grid-template-rows: 56px 1fr;
+    grid-template-rows: 54px 1fr;
     height: 100vh;
   }
   .topbar {
-    display: flex; align-items: center; gap: 12px;
-    padding: 0 16px;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 14px;
     background: var(--panel);
     border-bottom: 1px solid var(--border);
-    z-index: 20;
+    z-index: 30;
     overflow-x: auto;
   }
   .brand {
-    font-weight: 700; font-size: 15px; letter-spacing: .4px;
+    font-weight: 700; font-size: 14px; letter-spacing: .3px;
     display: flex; align-items: center; gap: 8px; white-space: nowrap;
   }
   .brand-dot {
-    width: 10px; height: 10px; border-radius: 50%;
+    width: 9px; height: 9px; border-radius: 50%;
     background: var(--accent); box-shadow: 0 0 10px var(--accent);
   }
-  .divider { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; }
-  select, input[type="number"] {
+  .divider { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
+  select, input[type="number"], input[type="text"], textarea {
     background: var(--panel-2); color: var(--text);
     border: 1px solid var(--border); border-radius: 6px;
-    padding: 5px 8px; font-size: 13px; outline: none;
+    padding: 4px 8px; font-size: 12px; outline: none;
   }
-  input[type="number"] { width: 68px; }
+  select:focus, input:focus, textarea:focus { border-color: var(--accent); }
+  input[type="number"] { width: 64px; }
   button {
     background: var(--panel-2); color: var(--text);
     border: 1px solid var(--border); border-radius: 6px;
-    padding: 6px 12px; font-size: 13px; font-weight: 500;
+    padding: 5px 10px; font-size: 12px; font-weight: 500;
     cursor: pointer; white-space: nowrap;
     transition: background .15s, border-color .15s;
   }
   button:hover:not(:disabled) { background: #262e3a; border-color: #4b5563; }
-  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button:disabled { opacity: 0.42; cursor: not-allowed; }
   button.primary { background: #1d4ed8; border-color: #2563eb; }
   button.primary:hover:not(:disabled) { background: #2563eb; }
   button.warn { background: #92400e; border-color: #b45309; }
   button.danger { background: #9f1239; border-color: #be123c; }
+  button.ghost { background: transparent; border-color: transparent; color: var(--muted); padding: 4px 8px; }
+  button.ghost:hover:not(:disabled) { background: var(--panel-2); color: var(--text); }
   .badge {
-    font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px;
-    white-space: nowrap;
+    font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+    white-space: nowrap; cursor: pointer;
   }
   .badge.pass { background: rgba(16, 185, 129, .15); color: #34d399; border: 1px solid rgba(16,185,129,.4); }
   .badge.fail { background: rgba(244, 63, 94, .15); color: #fb7185; border: 1px solid rgba(244,63,94,.4); }
+  .badge.dirty { background: rgba(245, 158, 11, .15); color: #fbbf24; border: 1px solid rgba(245,158,11,.4); }
+
   .speed-box {
-    display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap;
+    display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap;
   }
-  .speed-box input[type="range"] { width: 120px; accent-color: var(--accent); cursor: pointer; }
-  .speed-val { color: var(--accent); font-family: ui-monospace, monospace; min-width: 58px; }
+  .speed-box input[type="range"] { width: 100px; accent-color: var(--accent); cursor: pointer; }
+  .speed-val { color: var(--accent); font-family: ui-monospace, monospace; min-width: 52px; font-size: 11px; }
 
   .workspace {
     display: grid;
-    grid-template-columns: 1fr 370px;
+    grid-template-columns: 230px 1fr 370px;
     height: 100%;
     min-height: 0;
   }
+  .workspace.palette-collapsed {
+    grid-template-columns: 0px 1fr 370px;
+  }
+  .palette {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .palette-head {
+    padding: 10px 10px 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .palette-title {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px;
+  }
+  .palette-list {
+    flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .palette-group-title {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--muted); margin-bottom: 4px; padding-left: 2px;
+  }
+  .palette-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    padding: 6px 8px; border-radius: 6px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    cursor: grab; font-size: 12px; margin-bottom: 4px;
+    border-left: 3px solid var(--accent);
+    transition: border-color .15s, background .15s;
+  }
+  .palette-item:hover { background: #232a35; border-color: #4b5563; }
+  .palette-item[data-cat="source"] { border-left-color: var(--source); }
+  .palette-item[data-cat="backbone"] { border-left-color: var(--backbone); }
+  .palette-item[data-cat="op"] { border-left-color: var(--op); }
+  .palette-item[data-cat="bridge"] { border-left-color: var(--bridge); }
+  .palette-item[data-cat="loss"] { border-left-color: var(--loss); }
+  .palette-item small { color: var(--muted); font-size: 10px; font-family: ui-monospace, monospace; }
+
   .canvas-wrap {
     position: relative;
     overflow: hidden;
     background-color: #0b0f14;
-    background-image:
-      radial-gradient(#1f2937 1px, transparent 1px);
+    background-image: radial-gradient(#1f2937 1px, transparent 1px);
     background-size: 24px 24px;
     cursor: grab;
   }
   .canvas-wrap.grabbing { cursor: grabbing; }
+  .canvas-wrap.connecting { cursor: crosshair; }
   .stage {
     position: absolute; top: 0; left: 0;
     transform-origin: 0 0;
-    width: 4000px; height: 3000px;
+    width: 4800px; height: 3400px;
   }
   svg.edges-layer {
-    position: absolute; top: 0; left: 0; width: 4000px; height: 3000px;
+    position: absolute; top: 0; left: 0; width: 4800px; height: 3400px;
     pointer-events: none; overflow: visible;
   }
-  .nodes-layer {
-    position: absolute; top: 0; left: 0; width: 4000px; height: 3000px;
+  .edge-hit {
+    fill: none; stroke: transparent; stroke-width: 14;
+    pointer-events: stroke; cursor: pointer;
   }
+  .edge-visible { pointer-events: none; transition: stroke-width .12s; }
+  .edge-visible.selected { stroke-width: 3.6 !important; filter: url(#glow); }
+  .edge-visible.error { stroke: var(--danger) !important; }
+  .nodes-layer {
+    position: absolute; top: 0; left: 0; width: 4800px; height: 3400px;
+  }
+
   .node-card {
     position: absolute;
-    width: 224px;
+    width: 228px;
     background: rgba(22, 27, 34, 0.96);
     border: 1px solid var(--border);
     border-radius: 10px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
     user-select: none;
     cursor: default;
-    transition: box-shadow .18s, border-color .18s;
+    transition: box-shadow .16s, border-color .16s;
+  }
+  .node-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, .35), 0 10px 28px rgba(0, 0, 0, .6);
   }
   .node-card.active {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px rgba(56, 189, 248, .5), 0 8px 28px rgba(56, 189, 248, .22);
+    border-color: #34d399;
+    box-shadow: 0 0 0 1px rgba(52, 211, 153, .55), 0 8px 28px rgba(52, 211, 153, .22);
+  }
+  .node-card.erc-error {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 2px rgba(244, 63, 94, .35), 0 8px 24px rgba(244, 63, 94, .2);
   }
   .node-head {
     padding: 7px 10px;
@@ -139,15 +203,14 @@
 
   .node-title { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .node-type {
-    font-size: 11px; padding: 1px 6px; border-radius: 4px;
+    font-size: 10px; padding: 1px 6px; border-radius: 4px;
     background: #21262d; color: var(--muted); font-family: ui-monospace, monospace;
   }
   .node-params {
     padding: 5px 10px; font-size: 11px; color: var(--muted);
     font-family: ui-monospace, monospace;
     border-bottom: 1px dashed rgba(48, 54, 61, .7);
-    line-height: 1.45;
-    word-break: break-all;
+    line-height: 1.45; word-break: break-all;
   }
   .node-ports {
     display: grid; grid-template-columns: 1fr 1fr;
@@ -160,13 +223,16 @@
   }
   .ports-col.right .port-row { justify-content: flex-end; }
   .port-dot {
-    position: absolute; width: 10px; height: 10px; border-radius: 50%;
+    position: absolute; width: 11px; height: 11px; border-radius: 50%;
     background: var(--accent); border: 2px solid #0d1117;
+    cursor: crosshair; transition: transform .12s, background .12s;
+    z-index: 4;
   }
-  .ports-col.left .port-dot { left: -5px; }
-  .ports-col.right .port-dot { right: -5px; }
+  .port-dot:hover, .port-dot.snap { transform: scale(1.35); background: #fff; }
+  .ports-col.left .port-dot { left: -6px; }
+  .ports-col.right .port-dot { right: -6px; }
   .port-dot.tap { background: var(--tap); }
-  .port-label { font-family: ui-monospace, monospace; }
+  .port-label { font-family: ui-monospace, monospace; pointer-events: none; }
   .port-row.tap .port-label { color: var(--tap); }
 
   .node-live {
@@ -177,9 +243,7 @@
     font-size: 11px; font-family: ui-monospace, monospace;
     color: var(--muted);
   }
-  .live-bar-bg {
-    height: 3px; background: #21262d; border-radius: 2px; margin-top: 4px; overflow: hidden;
-  }
+  .live-bar-bg { height: 3px; background: #21262d; border-radius: 2px; margin-top: 4px; overflow: hidden; }
   .live-bar-fill {
     height: 100%; width: 0%; background: linear-gradient(90deg, #38bdf8, #10b981);
     transition: width .12s linear;
@@ -187,19 +251,60 @@
 
   .canvas-hint {
     position: absolute; left: 12px; bottom: 12px;
-    background: rgba(22, 27, 34, .85); border: 1px solid var(--border);
+    background: rgba(22, 27, 34, .88); border: 1px solid var(--border);
     border-radius: 6px; padding: 5px 10px; font-size: 11px; color: var(--muted);
-    display: flex; gap: 12px; pointer-events: none;
+    display: flex; gap: 10px; pointer-events: none; flex-wrap: wrap; max-width: calc(100% - 190px);
   }
   .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+
+  .minimap {
+    position: absolute; right: 12px; bottom: 12px;
+    width: 156px; height: 104px;
+    background: rgba(13, 17, 23, .88);
+    border: 1px solid var(--border); border-radius: 6px;
+    overflow: hidden; cursor: pointer; z-index: 10;
+  }
+
+  /* 快速搜索弹窗 (ComfyUI 双击建点) */
+  .quick-search {
+    position: absolute; z-index: 40;
+    width: 260px; background: var(--panel); border: 1px solid var(--accent);
+    border-radius: 8px; box-shadow: 0 12px 32px rgba(0,0,0,.65);
+    padding: 8px; display: none; flex-direction: column; gap: 6px;
+  }
+  .quick-search.open { display: flex; }
+  .quick-search-list {
+    max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px;
+  }
+  .quick-search-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 8px; border-radius: 5px; font-size: 12px; cursor: pointer;
+  }
+  .quick-search-item:hover, .quick-search-item.focused { background: #262e3a; }
+  .quick-search-item small { color: var(--muted); font-size: 10px; font-family: ui-monospace, monospace; }
 
   .sidebar {
     background: var(--panel);
     border-left: 1px solid var(--border);
     display: flex; flex-direction: column;
-    overflow-y: auto;
-    padding: 12px; gap: 12px;
+    overflow: hidden;
   }
+  .tabs {
+    display: grid; grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+  }
+  .tab-btn {
+    border: none; border-radius: 0; background: transparent;
+    padding: 9px 10px; font-size: 12px; font-weight: 600; color: var(--muted);
+    border-bottom: 2px solid transparent;
+  }
+  .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); background: var(--panel); }
+  .tab-pane {
+    flex: 1; overflow-y: auto; padding: 12px; display: none; flex-direction: column; gap: 12px;
+  }
+  .tab-pane.active { display: flex; }
+
   .card {
     background: var(--panel-2);
     border: 1px solid var(--border);
@@ -207,41 +312,34 @@
     padding: 10px 12px;
   }
   .card-title {
-    font-size: 12px; font-weight: 600; color: var(--muted);
+    font-size: 11px; font-weight: 700; color: var(--muted);
     text-transform: uppercase; letter-spacing: .5px;
     margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;
   }
-  .kpi-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-  }
+  .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .kpi {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
-    padding: 8px 10px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
   }
   .kpi-label { font-size: 11px; color: var(--muted); }
   .kpi-val {
-    font-size: 17px; font-weight: 700; margin-top: 2px;
+    font-size: 16px; font-weight: 700; margin-top: 2px;
     font-family: ui-monospace, monospace; color: var(--text);
   }
-  .loss-items {
-    display: flex; flex-direction: column; gap: 5px;
-    font-size: 12px; font-family: ui-monospace, monospace;
-  }
+  .loss-items { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-family: ui-monospace, monospace; }
   .loss-row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 4px 8px; background: var(--panel); border-radius: 5px;
   }
   .chart-box {
-    width: 100%; height: 175px;
+    width: 100%; height: 170px;
     background: #0d1117; border: 1px solid var(--border); border-radius: 6px;
-    position: relative;
   }
   .chart-legend {
     display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; font-size: 11px;
     font-family: ui-monospace, monospace; color: var(--muted);
   }
   .log-list {
-    max-height: 175px; overflow-y: auto;
+    max-height: 200px; overflow-y: auto;
     font-size: 11px; font-family: ui-monospace, monospace;
     display: flex; flex-direction: column; gap: 4px;
   }
@@ -250,6 +348,19 @@
   .log-item.warning { color: #fbbf24; border-left: 2px solid #f59e0b; }
   .log-item.info { color: #93c5fd; border-left: 2px solid #3b82f6; }
 
+  .form-row {
+    display: flex; flex-direction: column; gap: 3px; margin-bottom: 9px;
+  }
+  .form-row label {
+    font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; gap: 6px;
+  }
+  .form-row input[type="text"], .form-row input[type="number"], .form-row select, .form-row textarea {
+    width: 100%;
+  }
+  .form-inline {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 0; font-size: 12px;
+  }
   .edge-label-bg { fill: #0d1117; stroke: #30363d; stroke-width: 1; rx: 4; }
   .edge-label-txt { fill: #9ca3af; font-size: 10px; font-family: ui-monospace, monospace; text-anchor: middle; dominant-baseline: central; }
 </style>
@@ -257,18 +368,25 @@
 <body>
 <div class="app">
   <header class="topbar">
+    <button id="togglePaletteBtn" class="ghost" title="显示/隐藏左侧元件库">☰ 元件</button>
     <div class="brand"><span class="brand-dot"></span>NetPulse WebUI</div>
     <div class="divider"></div>
     <select id="graphSelect" title="选择计算图"></select>
-    <span id="ercBadge" class="badge pass">ERC 检查中</span>
-    <button id="fitBtn" title="自适应缩放对齐画布">适应画布</button>
+    <span id="dirtyBadge" class="badge dirty" style="display:none" title="画布有未保存更改">未保存</span>
+    <span id="ercBadge" class="badge pass" title="查看 ERC 详情">ERC 检查中</span>
+    <button id="undoBtn" title="撤销 (Ctrl+Z)" disabled>撤销</button>
+    <button id="redoBtn" title="重做 (Ctrl+Y)" disabled>重做</button>
+    <button id="autoLayoutBtn" title="按拓扑层级重排节点">自动排版</button>
+    <button id="fitBtn" title="自适应缩放对齐画布">适应</button>
+    <button id="saveBtn" title="保存到当前文件 (Ctrl+S)">保存</button>
+    <button id="saveAsBtn" title="另存为新图文件">另存为</button>
     <div class="divider"></div>
     <button id="startBtn" class="primary">开始训练</button>
     <button id="pauseBtn" class="warn" disabled>暂停</button>
     <button id="stopBtn" class="danger" disabled>停止</button>
     <div class="divider"></div>
     <div class="speed-box">
-      <span>步进延迟</span>
+      <span>延迟</span>
       <input id="speedSlider" type="range" min="0" max="800" step="20" value="150" />
       <span id="speedVal" class="speed-val">150 ms</span>
     </div>
@@ -276,11 +394,24 @@
       <span>Epochs</span>
       <input id="epochsInput" type="number" min="1" max="500" placeholder="默认" />
       <span>LR</span>
-      <input id="lrInput" type="number" step="0.0005" min="0.00001" placeholder="默认" style="width:82px" />
+      <input id="lrInput" type="number" step="0.0005" min="0.00001" placeholder="默认" style="width:74px" />
     </div>
   </header>
 
-  <main class="workspace">
+  <main id="workspace" class="workspace">
+    <!-- 左侧元件库 -->
+    <aside class="palette">
+      <div class="palette-head">
+        <div class="palette-title">
+          <span>元件库</span>
+          <span id="compCount" style="font-family:ui-monospace,monospace">-</span>
+        </div>
+        <input id="paletteSearch" type="text" placeholder="搜索元件 / 双击画布快速添加..." />
+      </div>
+      <div id="paletteList" class="palette-list"></div>
+    </aside>
+
+    <!-- 中间可编辑画布 -->
     <section id="canvasWrap" class="canvas-wrap">
       <div id="stage" class="stage">
         <svg id="edgesSvg" class="edges-layer">
@@ -294,64 +425,99 @@
             </filter>
           </defs>
           <g id="edgesGroup"></g>
+          <path id="dragWire" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-dasharray="5 4" style="display:none"></path>
           <g id="pulsesGroup"></g>
         </svg>
         <div id="nodesLayer" class="nodes-layer"></div>
       </div>
+
+      <!-- ComfyUI 风格双击快速建点弹窗 -->
+      <div id="quickSearch" class="quick-search">
+        <input id="quickSearchInput" type="text" placeholder="输入元件名回车创建 (Esc 关闭)" />
+        <div id="quickSearchList" class="quick-search-list"></div>
+      </div>
+
       <div class="canvas-hint">
         <span><i class="legend-dot" style="background:var(--source)"></i>Source</span>
         <span><i class="legend-dot" style="background:var(--backbone)"></i>Backbone</span>
         <span><i class="legend-dot" style="background:var(--op)"></i>Op/Bridge</span>
         <span><i class="legend-dot" style="background:var(--loss)"></i>Loss</span>
-        <span><i class="legend-dot" style="background:var(--tap)"></i>Tap 虚线抽头</span>
-        <span>| 拖拽节点移动 · 空白拖拽平移 · 滚轮缩放</span>
+        <span><i class="legend-dot" style="background:var(--tap)"></i>Tap</span>
+        <span>| 双击画布添加节点 · 拖端口圆点连线 · Del 删除选中 · Ctrl+Z 撤销</span>
       </div>
+
+      <svg id="minimap" class="minimap" viewBox="0 0 156 104"></svg>
     </section>
 
+    <!-- 右侧检查器与实时遥测 -->
     <aside class="sidebar">
-      <div class="card">
-        <div class="card-title">
-          <span>训练状态</span>
-          <span id="wsBadge" style="font-size:11px;color:var(--muted)">WS 连接中...</span>
+      <div class="tabs">
+        <button id="tabTelemetryBtn" class="tab-btn active">训练遥测 & ERC</button>
+        <button id="tabInspectorBtn" class="tab-btn">属性编辑</button>
+      </div>
+
+      <div id="paneTelemetry" class="tab-pane active">
+        <div class="card">
+          <div class="card-title">
+            <span>训练状态</span>
+            <span id="wsBadge" style="font-size:11px;color:var(--muted)">WS 连接中...</span>
+          </div>
+          <div class="kpi-grid">
+            <div class="kpi"><div class="kpi-label">Epoch / Step</div><div id="kpiStep" class="kpi-val">-</div></div>
+            <div class="kpi"><div class="kpi-label">Total Loss</div><div id="kpiLoss" class="kpi-val">-</div></div>
+            <div class="kpi"><div class="kpi-label">Batch Acc</div><div id="kpiBatchAcc" class="kpi-val">-</div></div>
+            <div class="kpi"><div class="kpi-label">Val Acc / Loss</div><div id="kpiVal" class="kpi-val">-</div></div>
+          </div>
         </div>
-        <div class="kpi-grid">
-          <div class="kpi"><div class="kpi-label">Epoch / Step</div><div id="kpiStep" class="kpi-val">-</div></div>
-          <div class="kpi"><div class="kpi-label">Total Loss</div><div id="kpiLoss" class="kpi-val">-</div></div>
-          <div class="kpi"><div class="kpi-label">Batch Acc</div><div id="kpiBatchAcc" class="kpi-val">-</div></div>
-          <div class="kpi"><div class="kpi-label">Val Acc / Loss</div><div id="kpiVal" class="kpi-val">-</div></div>
+
+        <div class="card">
+          <div class="card-title"><span>分项 Loss 汇集</span></div>
+          <div id="lossItems" class="loss-items">
+            <div style="color:var(--muted)">点击“开始训练”查看实时分项指标</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <span>Loss 实时曲线</span>
+            <span id="chartRange" style="font-size:11px;font-family:ui-monospace,monospace">-</span>
+          </div>
+          <div class="chart-box">
+            <svg id="lossChart" width="100%" height="100%" viewBox="0 0 320 175" preserveAspectRatio="none"></svg>
+          </div>
+          <div id="chartLegend" class="chart-legend"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span>ERC 校验与拓扑诊断</span></div>
+          <div id="ercLogs" class="log-list"></div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-title"><span>分项 Loss 汇集</span></div>
-        <div id="lossItems" class="loss-items">
-          <div style="color:var(--muted)">点击“开始训练”查看实时分项指标</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">
-          <span>Loss 实时曲线</span>
-          <span id="chartRange" style="font-size:11px;font-family:ui-monospace,monospace">-</span>
-        </div>
-        <div class="chart-box">
-          <svg id="lossChart" width="100%" height="100%" viewBox="0 0 320 175" preserveAspectRatio="none"></svg>
-        </div>
-        <div id="chartLegend" class="chart-legend"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-title"><span>ERC 校验与拓扑诊断</span></div>
-        <div id="ercLogs" class="log-list"></div>
+      <div id="paneInspector" class="tab-pane">
+        <div id="inspectorBody"></div>
       </div>
     </aside>
   </main>
 </div>
 
 <script>
-const NODE_W = 224;
+const NODE_W = 228;
+const CAT_ORDER = ["source", "backbone", "op", "bridge", "loss"];
+const CAT_LABELS = { source: "数据源 Source", backbone: "主干 Backbone", op: "算子 Op", bridge: "桥接 Bridge", loss: "目标 Loss" };
+const PALETTE = ["#38bdf8", "#34d399", "#fbbf24", "#f472b6", "#a78bfa"];
+const $ = (id) => document.getElementById(id);
+
 const state = {
-  graph: null,
+  components: {},
+  currentFile: "",
+  draftGraph: null,       // 唯一客户端编辑状态 { name, nodes, edges, losses, trainer }
+  viewData: null,         // 最近一次 /api/graph 或 /api/erc/check 返回结果
+  dirty: false,
+  undoStack: [],
+  redoStack: [],
+  selectedNodeId: null,
+  selectedEdgeId: null,
   positions: {},
   pan: { x: 20, y: 20 },
   scale: 1.0,
@@ -363,25 +529,213 @@ const state = {
   nodeEls: {},
   edgeMeta: [],
   lastPulseTs: 0,
+  wireDrag: null,         // { srcNode, srcPort, isTap }
+  ercTimer: null,
+  quickPos: { x: 200, y: 200 },
 };
 
-const PALETTE = ["#38bdf8", "#34d399", "#fbbf24", "#f472b6", "#a78bfa"];
-const $ = (id) => document.getElementById(id);
+function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+function setDirty(flag) {
+  state.dirty = flag;
+  $("dirtyBadge").style.display = flag ? "inline-block" : "none";
+}
+
+function updateHistoryButtons() {
+  $("undoBtn").disabled = state.undoStack.length === 0;
+  $("redoBtn").disabled = state.redoStack.length === 0;
+}
+
+function pushUndo() {
+  if (!state.draftGraph) return;
+  state.undoStack.push(deepClone(state.draftGraph));
+  if (state.undoStack.length > 40) state.undoStack.shift();
+  state.redoStack = [];
+  setDirty(true);
+  updateHistoryButtons();
+}
+
+function undo() {
+  if (!state.undoStack.length) return;
+  state.redoStack.push(deepClone(state.draftGraph));
+  state.draftGraph = state.undoStack.pop();
+  updateHistoryButtons();
+  setDirty(true);
+  runLiveErc();
+}
+
+function redo() {
+  if (!state.redoStack.length) return;
+  state.undoStack.push(deepClone(state.draftGraph));
+  state.draftGraph = state.redoStack.pop();
+  updateHistoryButtons();
+  setDirty(true);
+  runLiveErc();
+}
+
+function switchTab(tab) {
+  const isIns = tab === "inspector";
+  $("tabTelemetryBtn").classList.toggle("active", !isIns);
+  $("tabInspectorBtn").classList.toggle("active", isIns);
+  $("paneTelemetry").classList.toggle("active", !isIns);
+  $("paneInspector").classList.toggle("active", isIns);
+}
 
 function applyTransform() {
   $("stage").style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.scale})`;
+  renderMinimap();
+}
+
+function screenToStage(clientX, clientY) {
+  const rect = $("canvasWrap").getBoundingClientRect();
+  return {
+    x: (clientX - rect.left - state.pan.x) / state.scale,
+    y: (clientY - rect.top - state.pan.y) / state.scale,
+  };
+}
+
+function scheduleLiveErc(autoLayout = false) {
+  clearTimeout(state.ercTimer);
+  state.ercTimer = setTimeout(() => runLiveErc(autoLayout), 80);
+}
+
+async function runLiveErc(autoLayout = false) {
+  if (!state.draftGraph) return;
+  try {
+    const res = await fetch("/api/erc/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: state.currentFile || "draft.json",
+        graph: state.draftGraph,
+        auto_layout: autoLayout,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      $("ercBadge").className = "badge fail";
+      $("ercBadge").textContent = "IR 校验异常";
+      return;
+    }
+    if (autoLayout) {
+      for (const vn of data.nodes) {
+        const dn = state.draftGraph.nodes.find((n) => n.id === vn.id);
+        if (dn) dn.position = { ...vn.position };
+      }
+    }
+    renderGraph(data, { fit: false, syncDraft: false });
+  } catch (err) {
+    console.error("ERC check failed", err);
+  }
+}
+
+function renderPalette(filterText = "") {
+  const list = $("paletteList");
+  const q = filterText.trim().toLowerCase();
+  const byCat = {};
+  let total = 0;
+  for (const [tid, info] of Object.entries(state.components)) {
+    total += 1;
+    const match = !q || tid.toLowerCase().includes(q) || (info.display_name || "").toLowerCase().includes(q) || (info.description || "").toLowerCase().includes(q);
+    if (!match) continue;
+    (byCat[info.category] = byCat[info.category] || []).push(info);
+  }
+  $("compCount").textContent = String(total);
+  list.innerHTML = "";
+  for (const cat of CAT_ORDER) {
+    const items = byCat[cat];
+    if (!items || !items.length) continue;
+    const grp = document.createElement("div");
+    grp.innerHTML = `<div class="palette-group-title">${CAT_LABELS[cat] || cat}</div>`;
+    for (const info of items) {
+      const el = document.createElement("div");
+      el.className = "palette-item";
+      el.dataset.cat = info.category;
+      el.draggable = true;
+      el.title = info.description || info.type_id;
+      el.innerHTML = `<span>${info.display_name}</span><small>${info.type_id}</small>`;
+      el.addEventListener("dragstart", (ev) => {
+        ev.dataTransfer.setData("text/netpulse-type", info.type_id);
+      });
+      el.addEventListener("click", () => {
+        const wrap = $("canvasWrap");
+        const cx = (wrap.clientWidth / 2 - state.pan.x) / state.scale - NODE_W / 2;
+        const cy = (wrap.clientHeight / 2 - state.pan.y) / state.scale - 60;
+        addNodeAt(info.type_id, cx + (Math.random() * 40 - 20), cy + (Math.random() * 40 - 20));
+      });
+      grp.appendChild(el);
+    }
+    list.appendChild(grp);
+  }
+}
+
+function nextNodeId(typeId) {
+  const existing = new Set((state.draftGraph?.nodes || []).map((n) => n.id));
+  if (!existing.has(typeId)) return typeId;
+  let i = 1;
+  while (existing.has(`${typeId}_${i}`)) i++;
+  return `${typeId}_${i}`;
+}
+
+function nextEdgeId() {
+  const existing = new Set((state.draftGraph?.edges || []).map((e) => e.id));
+  let i = 1;
+  while (existing.has(`e${i}`)) i++;
+  return `e${i}`;
+}
+
+function addNodeAt(typeId, x, y) {
+  if (!state.draftGraph || !state.components[typeId]) return;
+  const info = state.components[typeId];
+  pushUndo();
+  const id = nextNodeId(typeId);
+  const params = deepClone(info.default_params || {});
+  state.draftGraph.nodes.push({
+    id,
+    type: typeId,
+    params,
+    position: { x: Math.round(x), y: Math.round(y) },
+  });
+  if (info.category === "loss") {
+    state.draftGraph.losses.push({ node_id: id, weight: 1.0, enabled: true });
+  }
+  state.selectedNodeId = id;
+  state.selectedEdgeId = null;
+  switchTab("inspector");
+  runLiveErc();
+}
+
+function deleteSelected() {
+  if (!state.draftGraph) return;
+  if (state.selectedNodeId) {
+    const nid = state.selectedNodeId;
+    pushUndo();
+    state.draftGraph.nodes = state.draftGraph.nodes.filter((n) => n.id !== nid);
+    state.draftGraph.edges = state.draftGraph.edges.filter((e) => e.src_node !== nid && e.dst_node !== nid);
+    state.draftGraph.losses = state.draftGraph.losses.filter((l) => l.node_id !== nid);
+    state.selectedNodeId = null;
+    runLiveErc();
+    return;
+  }
+  if (state.selectedEdgeId) {
+    const eid = state.selectedEdgeId;
+    pushUndo();
+    state.draftGraph.edges = state.draftGraph.edges.filter((e) => e.id !== eid);
+    state.selectedEdgeId = null;
+    runLiveErc();
+  }
 }
 
 function summarizeParams(type, params) {
   if (!params || Object.keys(params).length === 0) return "默认参数";
   const pick = [];
   for (const [k, v] of Object.entries(params)) {
-    if (k === "data_dir") continue;
+    if (k === "data_dir" || v === null || v === undefined || v === "") continue;
     const valStr = Array.isArray(v) ? `[${v.join(",")}]` : (typeof v === "object" ? JSON.stringify(v) : String(v));
     pick.push(`${k}=${valStr}`);
     if (pick.length >= 4) break;
   }
-  return pick.join(" · ");
+  return pick.length ? pick.join(" · ") : "默认参数";
 }
 
 function getPortPos(nodeId, portName, side, isTap = false) {
@@ -403,34 +757,55 @@ function renderEdges() {
   const group = $("edgesGroup");
   group.innerHTML = "";
   state.edgeMeta = [];
-  if (!state.graph) return;
+  if (!state.viewData) return;
 
-  for (const edge of state.graph.edges) {
+  const errorEdges = new Set((state.viewData.erc?.diagnostics || []).filter((d) => d.level === "error" && d.edge_id).map((d) => d.edge_id));
+
+  for (const edge of state.viewData.edges) {
     const isTap = edge.edge_kind === "tap";
     const p1 = getPortPos(edge.src_node, edge.src_port, "right", isTap);
     const p2 = getPortPos(edge.dst_node, edge.dst_port, "left", false);
     const dx = Math.max(48, Math.abs(p2.x - p1.x) * 0.45);
     const d = `M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y}, ${p2.x - dx} ${p2.y}, ${p2.x} ${p2.y}`;
 
+    const isSelected = state.selectedEdgeId === edge.id;
+    const isErr = errorEdges.has(edge.id);
+    const color = isErr ? "#fb7185" : (isTap ? "#fbbf24" : (edge.autobridge ? "#a855f7" : "#38bdf8"));
+
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", d);
     path.setAttribute("fill", "none");
-    const color = isTap ? "#fbbf24" : (edge.autobridge ? "#a855f7" : "#38bdf8");
     path.setAttribute("stroke", color);
     path.setAttribute("stroke-width", isTap ? "2" : "2.2");
-    path.setAttribute("stroke-opacity", "0.72");
+    path.setAttribute("stroke-opacity", isSelected ? "1" : "0.75");
+    path.setAttribute("class", `edge-visible${isSelected ? " selected" : ""}${isErr ? " error" : ""}`);
     if (isTap) path.setAttribute("stroke-dasharray", "6 4");
     group.appendChild(path);
 
-    // 形状或 AutoBridge 标签
+    const hit = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    hit.setAttribute("d", d);
+    hit.setAttribute("class", "edge-hit");
+    hit.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      state.selectedEdgeId = edge.id;
+      state.selectedNodeId = null;
+      renderEdges();
+      renderNodeSelection();
+      renderInspector();
+      switchTab("inspector");
+    });
+    group.appendChild(hit);
+
     const midX = (p1.x + p2.x) / 2;
     const midY = (p1.y + p2.y) / 2;
     let labelText = edge.shape ? `(${edge.shape.join(",")})` : "";
     if (edge.autobridge) {
       labelText = `AutoBridge ${edge.autobridge.from.join("×")}→${edge.autobridge.to.join("×")}`;
+    } else if (edge.bridge === "auto" && !isErr) {
+      labelText = labelText ? `${labelText} [auto]` : "[auto]";
     }
     if (labelText) {
-      const w = Math.max(44, labelText.length * 6.4 + 10);
+      const w = Math.max(44, labelText.length * 6.3 + 10);
       const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
       rect.setAttribute("x", midX - w / 2);
       rect.setAttribute("y", midY - 9);
@@ -446,17 +821,42 @@ function renderEdges() {
       txt.textContent = labelText;
       group.appendChild(txt);
     }
-
     state.edgeMeta.push({ edge, path, color });
   }
 }
 
-function renderGraph(data) {
-  state.graph = data;
+function renderNodeSelection() {
+  for (const [nid, card] of Object.entries(state.nodeEls)) {
+    card.classList.toggle("selected", state.selectedNodeId === nid);
+  }
+}
+
+function renderGraph(data, opts = { fit: true, syncDraft: true }) {
+  state.viewData = data;
+  if (opts.syncDraft) {
+    state.draftGraph = {
+      name: data.graph_name || "untitled_graph",
+      nodes: data.nodes.map((n) => ({ id: n.id, type: n.type, params: deepClone(n.params || {}), position: { ...n.position } })),
+      edges: data.edges.map((e) => ({
+        id: e.id, src_node: e.src_node, src_port: e.src_port,
+        dst_node: e.dst_node, dst_port: e.dst_port,
+        edge_kind: e.edge_kind || "signal", bridge: e.bridge || "none",
+      })),
+      losses: deepClone(data.losses || []),
+      trainer: deepClone(data.trainer || {}),
+    };
+    state.undoStack = [];
+    state.redoStack = [];
+    setDirty(false);
+    updateHistoryButtons();
+  }
+
   state.positions = {};
   state.nodeEls = {};
   const layer = $("nodesLayer");
   layer.innerHTML = "";
+
+  const errorNodes = new Set((data.erc?.diagnostics || []).filter((d) => d.level === "error" && d.node_id).map((d) => d.node_id));
 
   // ERC 状态与日志
   const ercBadge = $("ercBadge");
@@ -464,8 +864,9 @@ function renderGraph(data) {
     ercBadge.className = "badge pass";
     ercBadge.textContent = `ERC PASS · ${data.nodes.length} 节点`;
   } else {
+    const errCount = (data.erc.diagnostics || []).filter((d) => d.level === "error").length;
     ercBadge.className = "badge fail";
-    ercBadge.textContent = `ERC FAIL`;
+    ercBadge.textContent = `ERC FAIL (${errCount})`;
   }
   const logsEl = $("ercLogs");
   logsEl.innerHTML = "";
@@ -480,40 +881,37 @@ function renderGraph(data) {
     logsEl.appendChild(div);
   }
 
-  // 默认训练参数显示
   $("epochsInput").placeholder = String(data.trainer.epochs);
   $("lrInput").placeholder = String(data.trainer.lr);
-
-  // Loss 权重列表初态
   renderLossItems(null);
 
   for (const node of data.nodes) {
     state.positions[node.id] = { ...node.position };
     const card = document.createElement("div");
     card.className = "node-card";
+    if (state.selectedNodeId === node.id) card.classList.add("selected");
+    if (errorNodes.has(node.id)) card.classList.add("erc-error");
     card.dataset.cat = node.category;
     card.dataset.id = node.id;
     card.style.left = `${node.position.x}px`;
     card.style.top = `${node.position.y}px`;
 
     const inHtml = node.inputs.map((p) =>
-      `<div class="port-row" data-port="${p}"><span class="port-dot"></span><span class="port-label">${p}</span></div>`
+      `<div class="port-row" data-port="${p}" data-node="${node.id}" data-side="in"><span class="port-dot" title="拖入连线到此输入端口 (${p})"></span><span class="port-label">${p}</span></div>`
     ).join("");
-
     const outHtml = node.outputs.map((p) =>
-      `<div class="port-row" data-port="${p}" data-tap="0"><span class="port-label">${p}</span><span class="port-dot"></span></div>`
+      `<div class="port-row" data-port="${p}" data-tap="0" data-node="${node.id}" data-side="out"><span class="port-label">${p}</span><span class="port-dot" title="按住拖出连线 (${p})"></span></div>`
     ).join("");
-
     const tapHtml = node.taps.map((t) =>
-      `<div class="port-row tap" data-port="${t}" data-tap="1"><span class="port-label">tap:${t}</span><span class="port-dot tap"></span></div>`
+      `<div class="port-row tap" data-port="${t}" data-tap="1" data-node="${node.id}" data-side="out"><span class="port-label">tap:${t}</span><span class="port-dot tap" title="按住拖出隐层抽头连线 (tap:${t})"></span></div>`
     ).join("");
 
     const shapeEntry = Object.entries(node.out_specs || {})[0];
-    const staticShape = shapeEntry ? `shape=(${shapeEntry[1].shape.join(",")})` : "ready";
+    const staticShape = shapeEntry ? `shape=(${shapeEntry[1].shape.join(",")})` : (errorNodes.has(node.id) ? "ERC Error" : "ready");
 
     card.innerHTML = `
       <div class="node-head">
-        <span class="node-title">${node.id}</span>
+        <span class="node-title" title="${node.id}">${node.id}</span>
         <span class="node-type">${node.type}</span>
       </div>
       <div class="node-params">${summarizeParams(node.type, node.params)}</div>
@@ -527,29 +925,119 @@ function renderGraph(data) {
       </div>
     `;
 
-    // 节点拖拽
+    card.addEventListener("mousedown", (ev) => {
+      if (ev.target.closest(".port-dot")) return;
+      ev.stopPropagation();
+      state.selectedNodeId = node.id;
+      state.selectedEdgeId = null;
+      renderNodeSelection();
+      renderEdges();
+      renderInspector();
+    });
+
+    card.addEventListener("dblclick", (ev) => {
+      ev.stopPropagation();
+      state.selectedNodeId = node.id;
+      state.selectedEdgeId = null;
+      renderInspector();
+      switchTab("inspector");
+    });
+
+    // 节点头拖拽移动
     const head = card.querySelector(".node-head");
     head.addEventListener("mousedown", (ev) => {
       ev.stopPropagation();
+      state.selectedNodeId = node.id;
+      state.selectedEdgeId = null;
+      renderNodeSelection();
+      renderEdges();
+      renderInspector();
+
       const startX = ev.clientX;
       const startY = ev.clientY;
       const origX = state.positions[node.id].x;
       const origY = state.positions[node.id].y;
+      let moved = false;
+
       const onMove = (mv) => {
         const dx = (mv.clientX - startX) / state.scale;
         const dy = (mv.clientY - startY) / state.scale;
-        state.positions[node.id].x = origX + dx;
-        state.positions[node.id].y = origY + dy;
-        card.style.left = `${origX + dx}px`;
-        card.style.top = `${origY + dy}px`;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+        const nx = Math.round(origX + dx);
+        const ny = Math.round(origY + dy);
+        state.positions[node.id].x = nx;
+        state.positions[node.id].y = ny;
+        card.style.left = `${nx}px`;
+        card.style.top = `${ny}px`;
         renderEdges();
+        renderMinimap();
       };
       const onUp = () => {
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
+        if (moved && state.draftGraph) {
+          pushUndo();
+          const dn = state.draftGraph.nodes.find((n) => n.id === node.id);
+          if (dn) dn.position = { ...state.positions[node.id] };
+        }
       };
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
+    });
+
+    // 端口拖拽连线
+    card.querySelectorAll('.ports-col.right .port-dot').forEach((dot) => {
+      dot.addEventListener("mousedown", (ev) => {
+        ev.stopPropagation();
+        const row = dot.closest(".port-row");
+        const isTap = row.dataset.tap === "1";
+        state.wireDrag = { srcNode: node.id, srcPort: row.dataset.port, isTap };
+        $("canvasWrap").classList.add("connecting");
+        const wire = $("dragWire");
+        wire.setAttribute("stroke", isTap ? "#fbbf24" : "#38bdf8");
+        wire.style.display = "block";
+
+        const p1 = getPortPos(node.id, row.dataset.port, "right", isTap);
+        const updateWire = (clientX, clientY) => {
+          const p2 = screenToStage(clientX, clientY);
+          const dx = Math.max(40, Math.abs(p2.x - p1.x) * 0.45);
+          wire.setAttribute("d", `M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y}, ${p2.x - dx} ${p2.y}, ${p2.x} ${p2.y}`);
+        };
+        updateWire(ev.clientX, ev.clientY);
+
+        const onMove = (mv) => updateWire(mv.clientX, mv.clientY);
+        const onUp = (up) => {
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+          $("canvasWrap").classList.remove("connecting");
+          wire.style.display = "none";
+
+          const targetEl = document.elementFromPoint(up.clientX, up.clientY);
+          const inRow = targetEl?.closest?.('.ports-col.left .port-row');
+          if (inRow && state.wireDrag && inRow.dataset.node !== state.wireDrag.srcNode) {
+            const dstNode = inRow.dataset.node;
+            const dstPort = inRow.dataset.port;
+            pushUndo();
+            // 替换目标单输入口的已有连线
+            state.draftGraph.edges = state.draftGraph.edges.filter(
+              (e) => !(e.dst_node === dstNode && e.dst_port === dstPort)
+            );
+            state.draftGraph.edges.push({
+              id: nextEdgeId(),
+              src_node: state.wireDrag.srcNode,
+              src_port: state.wireDrag.srcPort,
+              dst_node: dstNode,
+              dst_port: dstPort,
+              edge_kind: state.wireDrag.isTap ? "tap" : "signal",
+              bridge: "auto",
+            });
+            runLiveErc();
+          }
+          state.wireDrag = null;
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+      });
     });
 
     layer.appendChild(card);
@@ -558,8 +1046,220 @@ function renderGraph(data) {
 
   requestAnimationFrame(() => {
     renderEdges();
-    fitView();
+    if (opts.fit) fitView();
+    else renderMinimap();
+    renderInspector();
   });
+}
+
+function renderInspector() {
+  const box = $("inspectorBody");
+  if (!state.draftGraph) {
+    box.innerHTML = `<div class="card" style="color:var(--muted);font-size:12px">请先加载或创建计算图</div>`;
+    return;
+  }
+
+  if (state.selectedEdgeId) {
+    const edge = state.draftGraph.edges.find((e) => e.id === state.selectedEdgeId);
+    const vEdge = state.viewData?.edges?.find((e) => e.id === state.selectedEdgeId);
+    if (edge) {
+      box.innerHTML = `
+        <div class="card">
+          <div class="card-title"><span>连线属性 (${edge.id})</span></div>
+          <div class="form-row"><label>流向</label><div style="font-family:ui-monospace,monospace;font-size:12px">${edge.src_node}.${edge.src_port} → ${edge.dst_node}.${edge.dst_port}</div></div>
+          <div class="form-row"><label>类型</label><div style="font-size:12px">${edge.edge_kind} ${vEdge?.shape ? `· shape=(${vEdge.shape.join(",")})` : ""}</div></div>
+          <div class="form-row">
+            <label>AutoBridge 自动矩阵桥</label>
+            <select id="edgeBridgeSel">
+              <option value="auto" ${edge.bridge === "auto" ? "selected" : ""}>auto（维度不等时自动插桥）</option>
+              <option value="none" ${edge.bridge === "none" ? "selected" : ""}>none（严格报错）</option>
+            </select>
+          </div>
+          <button id="delSelectedBtn" class="danger" style="width:100%;margin-top:4px">删除此连线 (Del)</button>
+        </div>
+      `;
+      $("edgeBridgeSel").addEventListener("change", (ev) => {
+        pushUndo();
+        edge.bridge = ev.target.value;
+        runLiveErc();
+      });
+      $("delSelectedBtn").addEventListener("click", deleteSelected);
+      return;
+    }
+  }
+
+  if (state.selectedNodeId) {
+    const node = state.draftGraph.nodes.find((n) => n.id === state.selectedNodeId);
+    if (node) {
+      const comp = state.components[node.type] || { display_name: node.type, description: "", params: [] };
+      const lossCfg = state.draftGraph.losses.find((l) => l.node_id === node.id);
+
+      let html = `
+        <div class="card">
+          <div class="card-title"><span>节点: ${node.id}</span><span>${comp.display_name || node.type}</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${comp.description || ""}</div>
+      `;
+
+      const renderedKeys = new Set();
+      for (const ps of (comp.params || [])) {
+        renderedKeys.add(ps.name);
+        const val = node.params[ps.name] !== undefined ? node.params[ps.name] : ps.default;
+        html += `<div class="form-row"><label><span>${ps.name}</span><span style="color:#6e7681">${ps.description || ""}</span></label>`;
+        if (ps.type === "select") {
+          const cur = val === null || val === undefined ? "" : String(val);
+          html += `<select data-param="${ps.name}" data-ptype="select">`;
+          for (const opt of (ps.options || [])) {
+            const s = String(opt);
+            html += `<option value="${s}" ${cur === s ? "selected" : ""}>${s || "(默认/自动)"}</option>`;
+          }
+          html += `</select>`;
+        } else if (ps.type === "bool") {
+          html += `<div class="form-inline"><span>启用</span><input type="checkbox" data-param="${ps.name}" data-ptype="bool" ${val ? "checked" : ""} /></div>`;
+        } else if (ps.type === "int" || ps.type === "float") {
+          const strVal = val === null || val === undefined ? "" : String(val);
+          html += `<input type="number" data-param="${ps.name}" data-ptype="${ps.type}" value="${strVal}" placeholder="自动" ${ps.min !== null ? `min="${ps.min}"` : ""} ${ps.max !== null ? `max="${ps.max}"` : ""} ${ps.step !== null ? `step="${ps.step}"` : ""} />`;
+        } else if (ps.type === "json") {
+          const strVal = val === null || val === undefined ? "" : JSON.stringify(val);
+          html += `<input type="text" data-param="${ps.name}" data-ptype="json" value='${strVal}' />`;
+        } else {
+          html += `<input type="text" data-param="${ps.name}" data-ptype="string" value="${val ?? ""}" />`;
+        }
+        html += `</div>`;
+      }
+
+      // 渲染不在 schema 里但已存在的额外参数（如 layers 数组等高级配置）
+      for (const [k, v] of Object.entries(node.params || {})) {
+        if (renderedKeys.has(k)) continue;
+        html += `
+          <div class="form-row">
+            <label><span>${k}</span><span style="color:#6e7681">高级 JSON</span></label>
+            <textarea rows="2" data-param="${k}" data-ptype="json">${JSON.stringify(v)}</textarea>
+          </div>
+        `;
+      }
+
+      if (lossCfg) {
+        html += `
+          <div class="divider" style="width:100%;height:1px;margin:8px 0"></div>
+          <div class="form-inline">
+            <span>纳入 total_loss 训练目标</span>
+            <input id="lossEnabledChk" type="checkbox" ${lossCfg.enabled !== false ? "checked" : ""} />
+          </div>
+          <div class="form-row">
+            <label><span>Loss 权重 (weight)</span></label>
+            <input id="lossWeightInp" type="number" step="0.05" min="0" value="${lossCfg.weight ?? 1.0}" />
+          </div>
+        `;
+      }
+
+      html += `<button id="delSelectedBtn" class="danger" style="width:100%;margin-top:6px">删除此节点 (Del)</button></div>`;
+      box.innerHTML = html;
+
+      box.querySelectorAll("[data-param]").forEach((inp) => {
+        const eventName = inp.tagName === "SELECT" || inp.type === "checkbox" ? "change" : "change";
+        inp.addEventListener(eventName, () => {
+          const pname = inp.dataset.param;
+          const ptype = inp.dataset.ptype;
+          pushUndo();
+          if (ptype === "bool") {
+            node.params[pname] = inp.checked;
+          } else if (ptype === "int") {
+            if (inp.value.trim() === "") delete node.params[pname];
+            else node.params[pname] = parseInt(inp.value, 10);
+          } else if (ptype === "float") {
+            if (inp.value.trim() === "") delete node.params[pname];
+            else node.params[pname] = parseFloat(inp.value);
+          } else if (ptype === "select") {
+            if (inp.value === "") delete node.params[pname];
+            else node.params[pname] = inp.value;
+          } else if (ptype === "json") {
+            try {
+              node.params[pname] = JSON.parse(inp.value);
+            } catch {
+              return;
+            }
+          } else {
+            node.params[pname] = inp.value;
+          }
+          scheduleLiveErc();
+        });
+      });
+
+      if (lossCfg) {
+        $("lossEnabledChk").addEventListener("change", (ev) => {
+          pushUndo();
+          lossCfg.enabled = ev.target.checked;
+          scheduleLiveErc();
+        });
+        $("lossWeightInp").addEventListener("change", (ev) => {
+          pushUndo();
+          lossCfg.weight = parseFloat(ev.target.value || "1.0");
+          scheduleLiveErc();
+        });
+      }
+      $("delSelectedBtn").addEventListener("click", deleteSelected);
+      return;
+    }
+  }
+
+  // 默认显示全局 Trainer 配置
+  const tr = state.draftGraph.trainer;
+  box.innerHTML = `
+    <div class="card">
+      <div class="card-title"><span>全局训练超参数 (Trainer)</span></div>
+      <div class="form-row"><label>图名称</label><input id="trGraphName" type="text" value="${state.draftGraph.name}" /></div>
+      <div class="form-row"><label>优化器</label>
+        <select id="trOpt">
+          <option value="adam" ${tr.optimizer === "adam" ? "selected" : ""}>adam</option>
+          <option value="adamw" ${tr.optimizer === "adamw" ? "selected" : ""}>adamw</option>
+          <option value="sgd" ${tr.optimizer === "sgd" ? "selected" : ""}>sgd</option>
+        </select>
+      </div>
+      <div class="form-row"><label>学习率 (lr)</label><input id="trLr" type="number" step="0.0005" value="${tr.lr}" /></div>
+      <div class="form-row"><label>Batch Size</label><input id="trBs" type="number" step="16" value="${tr.batch_size}" /></div>
+      <div class="form-row"><label>Epochs</label><input id="trEp" type="number" step="1" value="${tr.epochs}" /></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">提示：点击任意节点或连线可在此编辑其参数。</div>
+    </div>
+  `;
+  $("trGraphName").addEventListener("change", (e) => { pushUndo(); state.draftGraph.name = e.target.value; });
+  $("trOpt").addEventListener("change", (e) => { pushUndo(); tr.optimizer = e.target.value; });
+  $("trLr").addEventListener("change", (e) => { pushUndo(); tr.lr = parseFloat(e.target.value); });
+  $("trBs").addEventListener("change", (e) => { pushUndo(); tr.batch_size = parseInt(e.target.value, 10); });
+  $("trEp").addEventListener("change", (e) => { pushUndo(); tr.epochs = parseInt(e.target.value, 10); });
+}
+
+function renderMinimap() {
+  const mm = $("minimap");
+  const keys = Object.keys(state.positions);
+  if (!keys.length) { mm.innerHTML = ""; return; }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const id of keys) {
+    const p = state.positions[id];
+    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + NODE_W); maxY = Math.max(maxY, p.y + 130);
+  }
+  const pad = 80;
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+  const W = 156, H = 104;
+  const s = Math.min(W / Math.max(1, maxX - minX), H / Math.max(1, maxY - minY));
+  let html = "";
+  for (const n of (state.viewData?.nodes || [])) {
+    const p = state.positions[n.id];
+    if (!p) continue;
+    const rx = (p.x - minX) * s;
+    const ry = (p.y - minY) * s;
+    const rw = Math.max(6, NODE_W * s);
+    const rh = Math.max(4, 100 * s);
+    const col = n.category === "source" ? "#3b82f6" : n.category === "loss" ? "#f43f5e" : n.category === "backbone" ? "#10b981" : "#a855f7";
+    html += `<rect x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}" fill="${col}" fill-opacity="0.7" rx="1.5" />`;
+  }
+  const wrap = $("canvasWrap");
+  const vx = (-state.pan.x / state.scale - minX) * s;
+  const vy = (-state.pan.y / state.scale - minY) * s;
+  const vw = (wrap.clientWidth / state.scale) * s;
+  const vh = (wrap.clientHeight / state.scale) * s;
+  html += `<rect x="${vx.toFixed(1)}" y="${vy.toFixed(1)}" width="${vw.toFixed(1)}" height="${vh.toFixed(1)}" fill="none" stroke="#38bdf8" stroke-width="1" />`;
+  mm.innerHTML = html;
 }
 
 function fitView() {
@@ -569,10 +1269,8 @@ function fitView() {
   for (const id of keys) {
     const p = state.positions[id];
     const h = state.nodeEls[id]?.offsetHeight || 130;
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x + NODE_W);
-    maxY = Math.max(maxY, p.y + h);
+    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + NODE_W); maxY = Math.max(maxY, p.y + h);
   }
   const wrap = $("canvasWrap");
   const pad = 48;
@@ -580,7 +1278,7 @@ function fitView() {
   const availH = wrap.clientHeight - pad * 2;
   const contentW = Math.max(200, maxX - minX);
   const contentH = Math.max(200, maxY - minY);
-  const s = Math.min(1.15, Math.max(0.35, Math.min(availW / contentW, availH / contentH)));
+  const s = Math.min(1.15, Math.max(0.32, Math.min(availW / contentW, availH / contentH)));
   state.scale = s;
   state.pan.x = pad - minX * s + (availW - contentW * s) / 2;
   state.pan.y = pad - minY * s + (availH - contentH * s) / 2;
@@ -591,7 +1289,6 @@ function emitEdgePulses(nodeStats, tapStats) {
   const now = performance.now();
   if (now - state.lastPulseTs < 55) return;
   state.lastPulseTs = now;
-
   const pulsesGroup = $("pulsesGroup");
   const delay = Number($("speedSlider").value);
   const duration = Math.max(180, Math.min(650, delay > 0 ? delay * 0.85 : 220));
@@ -599,11 +1296,8 @@ function emitEdgePulses(nodeStats, tapStats) {
   for (const item of state.edgeMeta) {
     const { edge, path, color } = item;
     const isTap = edge.edge_kind === "tap";
-    const active = isTap
-      ? Boolean(tapStats && tapStats[`${edge.src_node}.${edge.src_port}`])
-      : Boolean(nodeStats && nodeStats[edge.src_node]);
+    const active = isTap ? Boolean(tapStats && tapStats[`${edge.src_node}.${edge.src_port}`]) : Boolean(nodeStats && nodeStats[edge.src_node]);
     if (!active) continue;
-
     const len = path.getTotalLength();
     if (!len || len < 5) continue;
 
@@ -620,11 +1314,8 @@ function emitEdgePulses(nodeStats, tapStats) {
       dot.setAttribute("cx", pt.x);
       dot.setAttribute("cy", pt.y);
       dot.setAttribute("opacity", String(1 - p * 0.35));
-      if (p < 1) {
-        requestAnimationFrame(tick);
-      } else {
-        dot.remove();
-      }
+      if (p < 1) requestAnimationFrame(tick);
+      else dot.remove();
     };
     requestAnimationFrame(tick);
   }
@@ -639,23 +1330,18 @@ function updateNodeLiveStats(nodeStats, tapStats) {
     if (!st) continue;
     card.classList.add("active");
     setTimeout(() => card.classList.remove("active"), 180);
-
-    const txt = card.querySelector(".live-text");
-    const bar = card.querySelector(".live-bar-fill");
-    txt.textContent = `norm=${st.norm.toFixed(2)} μ=${st.mean.toFixed(2)} σ=${st.std.toFixed(2)}`;
+    card.querySelector(".live-text").textContent = `norm=${st.norm.toFixed(2)} μ=${st.mean.toFixed(2)} σ=${st.std.toFixed(2)}`;
     const pct = Math.min(100, Math.max(8, Math.log1p(st.norm) * 24));
-    bar.style.width = `${pct}%`;
+    card.querySelector(".live-bar-fill").style.width = `${pct}%`;
   }
   emitEdgePulses(nodeStats, tapStats);
 }
 
 function renderLossItems(lossDict) {
   const container = $("lossItems");
-  if (!state.graph) return;
+  if (!state.draftGraph) return;
   const weights = {};
-  for (const lc of state.graph.losses || []) {
-    weights[lc.node_id] = lc.weight;
-  }
+  for (const lc of state.draftGraph.losses || []) weights[lc.node_id] = lc.weight;
   if (!lossDict) {
     const entries = Object.entries(weights);
     container.innerHTML = entries.length
@@ -673,41 +1359,30 @@ function renderLossChart() {
   const svg = $("lossChart");
   const legend = $("chartLegend");
   const pts = state.history;
-  if (!pts.length) {
-    svg.innerHTML = "";
-    legend.innerHTML = "";
-    $("chartRange").textContent = "-";
-    return;
-  }
+  if (!pts.length) { svg.innerHTML = ""; legend.innerHTML = ""; $("chartRange").textContent = "-"; return; }
   const keys = ["total_loss", ...Object.keys(state.lossSeries)];
   let minY = Infinity, maxY = -Infinity;
   for (const p of pts) {
-    if (p.total_loss < minY) minY = p.total_loss;
-    if (p.total_loss > maxY) maxY = p.total_loss;
+    minY = Math.min(minY, p.total_loss);
+    maxY = Math.max(maxY, p.total_loss);
     for (const k of Object.keys(state.lossSeries)) {
       const v = p.loss_dict?.[k];
-      if (v !== undefined) {
-        if (v < minY) minY = v;
-        if (v > maxY) maxY = v;
-      }
+      if (v !== undefined) { minY = Math.min(minY, v); maxY = Math.max(maxY, v); }
     }
   }
   if (!isFinite(minY) || minY === maxY) { minY = 0; maxY = Math.max(1, maxY + 0.1); }
   const padY = (maxY - minY) * 0.08;
-  minY = Math.max(0, minY - padY);
-  maxY = maxY + padY;
+  minY = Math.max(0, minY - padY); maxY = maxY + padY;
   $("chartRange").textContent = `${minY.toFixed(3)} ~ ${maxY.toFixed(3)}`;
 
   const W = 320, H = 175, M = 8;
   const mapX = (i) => pts.length === 1 ? W / 2 : M + (i / (pts.length - 1)) * (W - M * 2);
   const mapY = (v) => H - M - ((v - minY) / Math.max(1e-6, maxY - minY)) * (H - M * 2);
-
   let html = "";
   for (let g = 1; g <= 3; g++) {
     const gy = M + ((H - M * 2) * g) / 4;
     html += `<line x1="0" y1="${gy}" x2="${W}" y2="${gy}" stroke="#1f2937" stroke-width="1" />`;
   }
-
   legend.innerHTML = "";
   keys.forEach((k, idx) => {
     const color = PALETTE[idx % PALETTE.length];
@@ -725,34 +1400,63 @@ function renderLossChart() {
 }
 
 function setTrainButtons(running, paused) {
-  state.running = running;
-  state.paused = paused;
+  state.running = running; state.paused = paused;
   $("startBtn").disabled = running;
   $("pauseBtn").disabled = !running;
   $("stopBtn").disabled = !running;
   $("pauseBtn").textContent = paused ? "继续" : "暂停";
 }
 
-async function loadGraphs() {
+async function saveGraph(targetName) {
+  if (!state.draftGraph || !targetName) return;
+  const res = await fetch("/api/graph/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: targetName, graph: state.draftGraph }),
+  });
+  const data = await res.json();
+  if (!res.ok) { alert(data.error || "保存失败"); return; }
+  state.currentFile = data.name;
+  setDirty(false);
+  await refreshGraphSelect(data.name);
+}
+
+async function refreshGraphSelect(selectName) {
   const res = await fetch("/api/graphs");
   const data = await res.json();
   const sel = $("graphSelect");
   sel.innerHTML = data.graphs.map((g) => `<option value="${g}">${g}</option>`).join("");
-  if (data.status.graph_name && data.graphs.includes(data.status.graph_name)) {
-    sel.value = data.status.graph_name;
-  } else if (data.graphs.includes("mnist_atomic.json")) {
+  if (selectName && data.graphs.includes(selectName)) sel.value = selectName;
+  return data;
+}
+
+async function initApp() {
+  const [compRes, graphsData] = await Promise.all([
+    fetch("/api/components").then((r) => r.json()),
+    refreshGraphSelect(null),
+  ]);
+  state.components = compRes.components || {};
+  renderPalette();
+
+  const sel = $("graphSelect");
+  if (graphsData.status.graph_name && graphsData.graphs.includes(graphsData.status.graph_name)) {
+    sel.value = graphsData.status.graph_name;
+  } else if (graphsData.graphs.includes("mnist_atomic.json")) {
     sel.value = "mnist_atomic.json";
   }
-  setTrainButtons(data.status.running, data.status.paused);
-  $("speedSlider").value = String(data.status.step_delay_ms);
-  $("speedVal").textContent = `${data.status.step_delay_ms} ms`;
+  setTrainButtons(graphsData.status.running, graphsData.status.paused);
+  $("speedSlider").value = String(graphsData.status.step_delay_ms);
+  $("speedVal").textContent = `${graphsData.status.step_delay_ms} ms`;
   if (sel.value) await loadGraph(sel.value);
 }
 
 async function loadGraph(name) {
+  state.currentFile = name;
+  state.selectedNodeId = null;
+  state.selectedEdgeId = null;
   const res = await fetch(`/api/graph?name=${encodeURIComponent(name)}`);
   const data = await res.json();
-  renderGraph(data);
+  renderGraph(data, { fit: true, syncDraft: true });
 }
 
 function connectWS() {
@@ -767,8 +1471,7 @@ function connectWS() {
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === "train_started") {
-      state.history = [];
-      state.lossSeries = {};
+      state.history = []; state.lossSeries = {};
       $("kpiVal").textContent = "-";
       setTrainButtons(true, false);
     } else if (msg.type === "step") {
@@ -776,7 +1479,6 @@ function connectWS() {
       $("kpiLoss").textContent = msg.total_loss.toFixed(4);
       $("kpiBatchAcc").textContent = msg.batch_acc !== null ? `${(msg.batch_acc * 100).toFixed(1)}%` : "-";
       renderLossItems(msg.loss_dict);
-
       state.history.push(msg);
       if (state.history.length > 200) state.history.shift();
       for (const k of Object.keys(msg.loss_dict || {})) state.lossSeries[k] = true;
@@ -797,10 +1499,51 @@ function connectWS() {
   };
 }
 
-// 画布平移与缩放
+// 快速搜索弹窗逻辑
+function openQuickSearch(clientX, clientY) {
+  const wrapRect = $("canvasWrap").getBoundingClientRect();
+  state.quickPos = screenToStage(clientX, clientY);
+  const qs = $("quickSearch");
+  qs.style.left = `${Math.min(wrapRect.width - 270, Math.max(12, clientX - wrapRect.left))}px`;
+  qs.style.top = `${Math.min(wrapRect.height - 260, Math.max(12, clientY - wrapRect.top))}px`;
+  qs.classList.add("open");
+  $("quickSearchInput").value = "";
+  renderQuickSearchList("");
+  $("quickSearchInput").focus();
+}
+function closeQuickSearch() { $("quickSearch").classList.remove("open"); }
+function renderQuickSearchList(q) {
+  const list = $("quickSearchList");
+  const lower = q.trim().toLowerCase();
+  const matches = Object.values(state.components).filter((c) =>
+    !lower || c.type_id.toLowerCase().includes(lower) || c.display_name.toLowerCase().includes(lower)
+  );
+  list.innerHTML = "";
+  matches.slice(0, 12).forEach((c, idx) => {
+    const item = document.createElement("div");
+    item.className = `quick-search-item${idx === 0 ? " focused" : ""}`;
+    item.dataset.type = c.type_id;
+    item.innerHTML = `<span>${c.display_name}</span><small>${c.type_id}</small>`;
+    item.addEventListener("click", () => {
+      addNodeAt(c.type_id, state.quickPos.x, state.quickPos.y);
+      closeQuickSearch();
+    });
+    list.appendChild(item);
+  });
+}
+
+// 画布交互
 const wrap = $("canvasWrap");
 wrap.addEventListener("mousedown", (ev) => {
-  if (ev.target.closest(".node-card")) return;
+  if (ev.target.closest(".node-card") || ev.target.closest("#quickSearch") || ev.target.closest("#minimap")) return;
+  closeQuickSearch();
+  if (state.selectedNodeId || state.selectedEdgeId) {
+    state.selectedNodeId = null;
+    state.selectedEdgeId = null;
+    renderNodeSelection();
+    renderEdges();
+    renderInspector();
+  }
   wrap.classList.add("grabbing");
   const sx = ev.clientX - state.pan.x;
   const sy = ev.clientY - state.pan.y;
@@ -818,21 +1561,89 @@ wrap.addEventListener("mousedown", (ev) => {
   window.addEventListener("mouseup", onUp);
 });
 
+wrap.addEventListener("dblclick", (ev) => {
+  if (ev.target.closest(".node-card") || ev.target.closest("#quickSearch")) return;
+  openQuickSearch(ev.clientX, ev.clientY);
+});
+
+wrap.addEventListener("dragover", (ev) => ev.preventDefault());
+wrap.addEventListener("drop", (ev) => {
+  ev.preventDefault();
+  const typeId = ev.dataTransfer.getData("text/netpulse-type");
+  if (!typeId) return;
+  const pt = screenToStage(ev.clientX, ev.clientY);
+  addNodeAt(typeId, pt.x - NODE_W / 2, pt.y - 40);
+});
+
 wrap.addEventListener("wheel", (ev) => {
   ev.preventDefault();
   const rect = wrap.getBoundingClientRect();
   const mx = ev.clientX - rect.left;
   const my = ev.clientY - rect.top;
   const factor = ev.deltaY < 0 ? 1.08 : 0.92;
-  const nextScale = Math.min(2.0, Math.max(0.3, state.scale * factor));
+  const nextScale = Math.min(2.0, Math.max(0.28, state.scale * factor));
   state.pan.x = mx - ((mx - state.pan.x) / state.scale) * nextScale;
   state.pan.y = my - ((my - state.pan.y) / state.scale) * nextScale;
   state.scale = nextScale;
   applyTransform();
 }, { passive: false });
 
+// 快捷键：Delete/Backspace 删节点或边，Ctrl+Z/Y 撤销重做，Ctrl+S 保存
+window.addEventListener("keydown", (ev) => {
+  const tag = document.activeElement?.tagName;
+  const editing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  if (ev.key === "Escape") { closeQuickSearch(); return; }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
+    ev.preventDefault();
+    if (state.currentFile) saveGraph(state.currentFile);
+    return;
+  }
+  if (!editing && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z") {
+    ev.preventDefault();
+    if (ev.shiftKey) redo(); else undo();
+    return;
+  }
+  if (!editing && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "y") {
+    ev.preventDefault();
+    redo();
+    return;
+  }
+  if (!editing && (ev.key === "Delete" || ev.key === "Backspace")) {
+    ev.preventDefault();
+    deleteSelected();
+  }
+});
+
+$("quickSearchInput").addEventListener("input", (e) => renderQuickSearchList(e.target.value));
+$("quickSearchInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const first = $("quickSearchList").querySelector(".quick-search-item");
+    if (first) {
+      addNodeAt(first.dataset.type, state.quickPos.x, state.quickPos.y);
+      closeQuickSearch();
+    }
+  }
+});
+
+$("paletteSearch").addEventListener("input", (e) => renderPalette(e.target.value));
+$("togglePaletteBtn").addEventListener("click", () => $("workspace").classList.toggle("palette-collapsed"));
+$("tabTelemetryBtn").addEventListener("click", () => switchTab("telemetry"));
+$("tabInspectorBtn").addEventListener("click", () => switchTab("inspector"));
+$("ercBadge").addEventListener("click", () => switchTab("telemetry"));
+
 $("graphSelect").addEventListener("change", (e) => loadGraph(e.target.value));
+$("undoBtn").addEventListener("click", undo);
+$("redoBtn").addEventListener("click", redo);
+$("autoLayoutBtn").addEventListener("click", () => { pushUndo(); runLiveErc(true); });
 $("fitBtn").addEventListener("click", fitView);
+$("saveBtn").addEventListener("click", () => {
+  const target = state.currentFile || prompt("请输入保存文件名（如 my_net.json）：", "custom_graph.json");
+  if (target) saveGraph(target);
+});
+$("saveAsBtn").addEventListener("click", () => {
+  const target = prompt("另存为文件名（.json 或 .yaml）：", state.currentFile ? `copy_${state.currentFile}` : "custom_graph.json");
+  if (target) saveGraph(target);
+});
 
 $("speedSlider").addEventListener("input", async (e) => {
   const val = Number(e.target.value);
@@ -845,14 +1656,20 @@ $("speedSlider").addEventListener("input", async (e) => {
 });
 
 $("startBtn").addEventListener("click", async () => {
-  const name = $("graphSelect").value;
+  switchTab("telemetry");
   const delay = Number($("speedSlider").value);
   const epochs = $("epochsInput").value ? Number($("epochsInput").value) : null;
   const lr = $("lrInput").value ? Number($("lrInput").value) : null;
   await fetch("/api/train/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ graph_name: name, step_delay_ms: delay, epochs, lr }),
+    body: JSON.stringify({
+      graph_name: state.currentFile,
+      graph: state.draftGraph,
+      step_delay_ms: delay,
+      epochs,
+      lr,
+    }),
   });
 });
 
@@ -873,7 +1690,7 @@ $("stopBtn").addEventListener("click", async () => {
   setTrainButtons(false, false);
 });
 
-loadGraphs();
+initApp();
 connectWS();
 </script>
 </body>

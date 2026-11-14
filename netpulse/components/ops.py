@@ -9,7 +9,7 @@ import torch.nn as nn
 
 from netpulse.core.component import BaseComponent
 from netpulse.core.registry import register_component
-from netpulse.core.types import ComponentSignature, PortSpec, ResolvedSpec, Signal
+from netpulse.core.types import ComponentSignature, ParamSpec, PortSpec, ResolvedSpec, Signal
 
 
 class _FlattenModule(nn.Module):
@@ -27,6 +27,14 @@ class Flatten(BaseComponent):
     """将高维特征图（如 BCHW）展平为 2D 特征向量（BD）。"""
 
     category = "op"
+    display_name = "Flatten"
+    description = "高维张量展平为 BD 向量"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("start_dim", "int", 1, min=1, max=3, step=1, description="起始展平维度"),
+        ]
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
@@ -51,6 +59,8 @@ class GlobalAvgPool(BaseComponent):
     """空间全局平均池化（BCHW -> BD）。"""
 
     category = "op"
+    display_name = "GlobalAvgPool"
+    description = "对空间维 H×W 求全局均值（BCHW -> BD）"
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
@@ -83,6 +93,15 @@ class MatrixBridge(BaseComponent):
     """显式矩阵连接/投影元件。"""
 
     category = "bridge"
+    display_name = "MatrixBridge"
+    description = "可学习线性 / 1×1 Conv 空间投影桥"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("out_dim", "int", 32, required=True, min=1, max=8192, step=1, description="目标投影维度"),
+            ParamSpec("bias", "bool", True, description="是否启用偏置"),
+        ]
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
@@ -94,7 +113,7 @@ class MatrixBridge(BaseComponent):
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
         in_spec = in_specs["x"]
         in_dim = in_spec.shape[1] if in_spec.layout == "BCHW" and in_spec.rank == 4 else in_spec.shape[-1]
-        out_dim = int(params["out_dim"])
+        out_dim = int(params.get("out_dim", 32))
         bias = bool(params.get("bias", True))
         return _MatrixBridgeModule(in_dim=in_dim, out_dim=out_dim, layout=in_spec.layout, bias=bias)
 
@@ -117,6 +136,15 @@ class TensorAdd(BaseComponent):
     """双路张量加权融合（若 b 维度与 a 不一致且配置 bridge='auto'，ERC 自动插入矩阵桥）。"""
 
     category = "op"
+    display_name = "TensorAdd"
+    description = "双路残差/特征加权融合（alpha·a + beta·b）"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec("alpha", "float", 1.0, min=-10.0, max=10.0, step=0.1, description="分支 a 权重"),
+            ParamSpec("beta", "float", 1.0, min=-10.0, max=10.0, step=0.1, description="分支 b 权重"),
+        ]
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:

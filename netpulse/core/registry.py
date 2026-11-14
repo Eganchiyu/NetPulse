@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import logging
+import sys
 from pathlib import Path
-from typing import Type
+from typing import Any, Type
 
 from netpulse.core.component import BaseComponent
+
+logger = logging.getLogger(__name__)
 
 
 class ComponentRegistry:
@@ -15,6 +19,8 @@ class ComponentRegistry:
 
     def __init__(self) -> None:
         self._components: dict[str, Type[BaseComponent]] = {}
+        self._loaded_plugin_paths: set[str] = set()
+        self.plugin_errors: dict[str, str] = {}
 
     def register(self, type_id: str, cls: Type[BaseComponent]) -> None:
         if not issubclass(cls, BaseComponent):
@@ -33,21 +39,74 @@ class ComponentRegistry:
     def list_types(self) -> list[str]:
         return sorted(self._components.keys())
 
+    def describe_component(self, type_id: str) -> dict[str, Any]:
+        """导出单个元件的元信息（对标 ComfyUI /object_info）。"""
+        cls = self.get(type_id)
+        defaults = cls.default_params()
+        try:
+            sig = cls.declare_ports(defaults)
+        except Exception:
+            sig = cls.declare_ports({})
+        return {
+            "type_id": type_id,
+            "display_name": cls.display_name or type_id,
+            "category": cls.category,
+            "description": cls.description or (cls.__doc__ or "").strip(),
+            "params": [p.to_dict() for p in cls.param_schema()],
+            "default_params": defaults,
+            "inputs": [
+                {"name": p.name, "kind": p.kind, "layout": p.layout, "optional": p.optional}
+                for p in sig.inputs
+            ],
+            "outputs": [
+                {"name": p.name, "kind": p.kind, "layout": p.layout}
+                for p in sig.outputs
+            ],
+            "taps": [
+                {"name": t.name, "source": t.source, "layout": t.spec.layout}
+                for t in sig.taps
+            ],
+        }
+
+    def describe_all(self) -> dict[str, dict[str, Any]]:
+        """导出全部已注册元件的 Schema 与端口定义。"""
+        return {type_id: self.describe_component(type_id) for type_id in self.list_types()}
+
     def load_plugins(self, plugins_dir: str | Path) -> list[str]:
-        """扫描 plugins 目录下的 .py 文件并自动注册其中的 @register_component 元件。"""
+        """扫描 plugins 目录下的 .py 文件与子包（__init__.py），单插件失败不中断整体加载。"""
         root = Path(plugins_dir)
         if not root.exists():
             return []
-        loaded: list[str] = []
+
+        candidates: list[Path] = []
         for path in sorted(root.glob("*.py")):
-            if path.name.startswith("_"):
-                continue
-            mod_name = f"netpulse_plugin_{path.stem}"
-            spec = importlib.util.spec_from_file_location(mod_name, path)
-            if spec and spec.loader:
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
+            if not path.name.startswith("_"):
+                candidates.append(path)
+        for sub in sorted(root.iterdir()):
+            init_file = sub / "__init__.py"
+            if sub.is_dir() and not sub.name.startswith("_") and init_file.exists():
+                candidates.append(init_file)
+
+        loaded: list[str] = []
+        for path in candidates:
+            resolved = str(path.resolve())
+            if resolved in self._loaded_plugin_paths:
                 loaded.append(str(path))
+                continue
+            stem = path.parent.name if path.name == "__init__.py" else path.stem
+            mod_name = f"netpulse_plugin_{stem}"
+            try:
+                spec = importlib.util.spec_from_file_location(mod_name, path)
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    sys.modules[mod_name] = module
+                    spec.loader.exec_module(module)
+                    self._loaded_plugin_paths.add(resolved)
+                    self.plugin_errors.pop(str(path), None)
+                    loaded.append(str(path))
+            except Exception as exc:
+                self.plugin_errors[str(path)] = f"{type(exc).__name__}: {exc}"
+                logger.warning("Failed to load plugin %s: %s", path, exc)
         return loaded
 
 

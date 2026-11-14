@@ -8,6 +8,35 @@ import torch
 
 PortKind = Literal["tensor", "loss", "data_batch"]
 CategoryKind = Literal["source", "backbone", "op", "bridge", "loss"]
+ParamType = Literal["int", "float", "bool", "string", "select", "json"]
+
+
+@dataclass(frozen=True)
+class ParamSpec:
+    """元件参数契约（用于 WebUI 动态表单渲染与 Schema 校验）。"""
+
+    name: str
+    type: ParamType = "string"
+    default: Any = None
+    required: bool = False
+    options: Optional[list[Any]] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
+    step: Optional[float] = None
+    description: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "type": self.type,
+            "default": self.default,
+            "required": self.required,
+            "options": list(self.options) if self.options is not None else None,
+            "min": self.min,
+            "max": self.max,
+            "step": self.step,
+            "description": self.description,
+        }
 
 
 @dataclass
