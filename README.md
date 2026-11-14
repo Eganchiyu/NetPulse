@@ -48,7 +48,7 @@ docs/               # 架构设计文档 (design.md) 与系统交接文档 (ARCH
 建议在独立虚拟环境中安装依赖（请根据本机硬件选择对应的 PyTorch CPU 或 CUDA 版本）：
 
 ```bash
-git clone <仓库地址>
+git clone https://github.com/Eganchiyu/NetPulse
 cd netpulse
 
 python -m venv .venv
