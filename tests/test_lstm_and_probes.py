@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 import torch
 from aiohttp.test_utils import TestClient, TestServer
@@ -159,3 +160,41 @@ def test_webui_ws_streams_lstm_observatory_probes() -> None:
             await client.close()
 
     asyncio.run(_run())
+
+
+def test_lstm_forecast_classic_and_templates_erc() -> None:
+    reg = get_default_registry()
+    assert reg.has("seq_forecast_data")
+    assert reg.has("mse_loss")
+
+    # 校验全部模板均可静态通过 ERC
+    tpl_files = sorted(Path("templates").glob("*.json"))
+    assert len(tpl_files) >= 5
+    for p in tpl_files:
+        g = GraphIR.from_file(p)
+        erc = run_erc(g, reg)
+        assert erc.passed, f"{p} ERC 失败: {erc.format_report()}"
+
+    # 校验经典 LSTM 时序预测工作流端到端收敛与探针快照
+    graph = GraphIR.from_file("examples/lstm_forecast_classic.json")
+    graph.trainer.epochs = 6
+    compiled = GraphCompiler.compile(graph, reg)
+    res = Trainer(compiled).fit(verbose=False)
+    assert res.steps > 0
+    assert res.final_val_loss is not None and res.final_val_loss < 0.08
+    assert res.final_val_acc is None
+
+    assert compiled.nodes_mod["probe_gates"].capture_snapshot() is not None
+    assert compiled.nodes_mod["probe_traj"].capture_snapshot() is not None
+    assert compiled.nodes_mod["probe_energy"].capture_snapshot() is not None
+    assert compiled.nodes_mod["watch_mse"].capture_snapshot() is not None
+    assert compiled.nodes_mod["peek_pred"].capture_snapshot() is not None
+
+    # 校验 MSELoss 对预测与目标维度不匹配能报错拦截
+    bad = graph.model_copy(deep=True)
+    for n in bad.nodes:
+        if n.id == "head":
+            n.params["dims"] = [16, 4]
+    bad_erc = run_erc(bad, reg)
+    assert not bad_erc.passed
+    assert any(d.code == "DIM_MISMATCH" for d in bad_erc.diagnostics)

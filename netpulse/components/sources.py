@@ -28,6 +28,8 @@ class _SourceModule(nn.Module):
         x_layout: str,
         loader_factory,
         sample_has_mask: bool = False,
+        y_dtype: torch.dtype = torch.int64,
+        y_layout: str = "B",
     ) -> None:
         super().__init__()
         self.sample_x_shape = sample_x_shape
@@ -35,6 +37,8 @@ class _SourceModule(nn.Module):
         self.x_layout = x_layout
         self._loader_factory = loader_factory
         self.sample_has_mask = sample_has_mask
+        self.y_dtype = y_dtype
+        self.y_layout = y_layout
 
     def forward(self, inputs: dict[str, Signal]) -> dict[str, Signal]:
         if "x" in inputs and "y" in inputs:
@@ -42,7 +46,7 @@ class _SourceModule(nn.Module):
         # Meta 推导或空输入时返回虚拟符号张量
         dev = "meta"
         x = torch.empty(self.sample_x_shape, dtype=torch.float32, device=dev)
-        y = torch.empty(self.sample_y_shape, dtype=torch.int64, device=dev)
+        y = torch.empty(self.sample_y_shape, dtype=self.y_dtype, device=dev)
         mask = (
             torch.empty(self.sample_x_shape[:2], dtype=torch.bool, device=dev)
             if self.sample_has_mask and len(self.sample_x_shape) >= 2
@@ -50,7 +54,7 @@ class _SourceModule(nn.Module):
         )
         return {
             "x": Signal(data=x, mask=mask, meta={"layout": self.x_layout}),
-            "y": Signal(data=y, meta={"layout": "B"}),
+            "y": Signal(data=y, meta={"layout": self.y_layout}),
         }
 
     def build_dataloaders(self, batch_size: int, seed: int) -> tuple[DataLoader, Optional[DataLoader]]:
@@ -349,4 +353,111 @@ class SeqWaveData(BaseComponent):
             x_layout="BLD",
             loader_factory=_factory,
             sample_has_mask=variable_length,
+        )
+
+
+@register_component("seq_forecast_data")
+class SeqForecastData(BaseComponent):
+    """经典时间序列滑窗回归预测数据源（多谐波叠加 / 阻尼振荡 / 自回归趋势）。"""
+
+    category = "source"
+    display_name = "SeqForecast Data"
+    description = "时间序列滑窗预测数据源（x 为历史窗口 BLD，y 为未来 horizon 步真值 BD）"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec(
+                "pattern",
+                "select",
+                "sine_mix",
+                options=["sine_mix", "damped_osc", "ar_trend"],
+                description="信号生成模式（sine_mix 多谐波；damped_osc 阻尼振荡；ar_trend 自回归趋势）",
+            ),
+            ParamSpec("window_len", "int", 24, min=6, max=128, step=2, description="输入历史窗口长度 L"),
+            ParamSpec("horizon", "int", 1, min=1, max=16, step=1, description="预测未来步数（y 维度）"),
+            ParamSpec("feat_dim", "int", 3, min=1, max=16, step=1, description="每步通道数 D（第 0 维为目标序列）"),
+            ParamSpec("num_samples", "int", 800, min=64, max=5000, step=50, description="样本总数"),
+            ParamSpec("noise", "float", 0.05, min=0.0, max=0.5, step=0.01, description="观测高斯噪声"),
+        ]
+
+    @classmethod
+    def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
+        return ComponentSignature(
+            inputs=[],
+            outputs=[
+                PortSpec(name="x", kind="tensor", rank=[3], layout="BLD", dtype="float32"),
+                PortSpec(name="y", kind="tensor", rank=[2], layout="BD", dtype="float32"),
+            ],
+        )
+
+    def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
+        pattern = str(params.get("pattern", "sine_mix"))
+        window_len = int(params.get("window_len", 24))
+        horizon = int(params.get("horizon", 1))
+        feat_dim = int(params.get("feat_dim", 3))
+        num_samples = int(params.get("num_samples", 800))
+        noise = float(params.get("noise", 0.05))
+        batch_hint = int(params.get("meta_batch_size", 32))
+
+        def _factory(batch_size: int, seed: int):
+            g = torch.Generator().manual_seed(seed)
+            total_steps = window_len + horizon
+            x = torch.zeros((num_samples, window_len, feat_dim), dtype=torch.float32)
+            y = torch.zeros((num_samples, horizon), dtype=torch.float32)
+
+            t_full = torch.linspace(0.0, 4.0 * math.pi, total_steps)
+            for i in range(num_samples):
+                phase = float(torch.rand(1, generator=g).item()) * 2.0 * math.pi
+                freq = 0.8 + 0.8 * float(torch.rand(1, generator=g).item())
+                amp = 0.7 + 0.5 * float(torch.rand(1, generator=g).item())
+
+                if pattern == "damped_osc":
+                    decay = torch.exp(-0.18 * t_full)
+                    base = amp * decay * torch.sin(freq * t_full + phase) + 0.3 * torch.cos(0.5 * t_full)
+                elif pattern == "ar_trend":
+                    trend = 0.08 * t_full - 0.4
+                    base = trend + 0.65 * amp * torch.sin(freq * t_full + phase) + 0.25 * torch.sin(2.1 * freq * t_full)
+                else:
+                    # sine_mix: 主频 + 二次谐波 + 慢包络
+                    base = (
+                        amp * torch.sin(freq * t_full + phase)
+                        + 0.4 * torch.cos(2.0 * freq * t_full + 0.5 * phase)
+                        + 0.2 * torch.sin(0.35 * t_full)
+                    )
+
+                series = base + torch.randn(total_steps, generator=g) * noise
+                x[i, :, 0] = series[:window_len]
+                y[i, :] = base[window_len:]  # 预测干净未来值，稳定收敛
+
+                if feat_dim > 1:
+                    # 一阶差分特征（局部斜率）
+                    diff = torch.zeros_like(series[:window_len])
+                    diff[1:] = series[1:window_len] - series[: window_len - 1]
+                    x[i, :, 1] = diff
+                if feat_dim > 2:
+                    # 归一化绝对位置编码 / 相位线索
+                    x[i, :, 2] = torch.linspace(-1.0, 1.0, window_len)
+                for d in range(3, feat_dim):
+                    x[i, :, d] = torch.cos((d - 1) * freq * t_full[:window_len] + phase)
+
+            # 随机划分训练/验证集
+            perm = torch.randperm(num_samples, generator=g)
+            x, y = x[perm], y[perm]
+            split = int(num_samples * 0.8)
+            train_ds = TensorDataset(x[:split], y[:split])
+            val_ds = TensorDataset(x[split:], y[split:])
+            return (
+                DataLoader(train_ds, batch_size=batch_size, shuffle=True),
+                DataLoader(val_ds, batch_size=batch_size, shuffle=False),
+            )
+
+        return _SourceModule(
+            sample_x_shape=(batch_hint, window_len, feat_dim),
+            sample_y_shape=(batch_hint, horizon),
+            x_layout="BLD",
+            loader_factory=_factory,
+            sample_has_mask=False,
+            y_dtype=torch.float32,
+            y_layout="BD",
         )

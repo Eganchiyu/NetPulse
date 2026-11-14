@@ -1,0 +1,108 @@
+{
+  "name": "lstm_forecast_classic",
+  "nodes": [
+    {
+      "id": "ts_src",
+      "type": "seq_forecast_data",
+      "params": {
+        "pattern": "sine_mix",
+        "window_len": 24,
+        "horizon": 1,
+        "feat_dim": 3,
+        "num_samples": 800,
+        "noise": 0.05
+      },
+      "position": { "x": 60.0, "y": 240.0 }
+    },
+    {
+      "id": "lstm",
+      "type": "lstm",
+      "params": {
+        "hidden_size": 32,
+        "num_layers": 2,
+        "dropout": 0.05,
+        "forget_bias": 1.0,
+        "init": "orthogonal"
+      },
+      "position": { "x": 360.0, "y": 200.0 }
+    },
+    {
+      "id": "ln",
+      "type": "layer_norm",
+      "params": { "eps": 1e-5, "elementwise_affine": true },
+      "position": { "x": 670.0, "y": 150.0 }
+    },
+    {
+      "id": "head",
+      "type": "mlp_block",
+      "params": {
+        "dims": [16, 1],
+        "activation": "tanh",
+        "activate_last": false
+      },
+      "position": { "x": 960.0, "y": 150.0 }
+    },
+    {
+      "id": "mse",
+      "type": "mse_loss",
+      "params": { "reduction": "mean" },
+      "position": { "x": 1270.0, "y": 170.0 }
+    },
+    {
+      "id": "watch_mse",
+      "type": "scalar_watch",
+      "params": { "reduce": "mean", "ema_alpha": 0.15, "history_len": 150 },
+      "position": { "x": 1580.0, "y": 130.0 }
+    },
+    {
+      "id": "peek_pred",
+      "type": "tensor_peek",
+      "params": { "view": "raw", "sample_idx": 0, "max_rows": 6, "max_cols": 4, "precision": 4 },
+      "position": { "x": 1270.0, "y": 30.0 }
+    },
+    {
+      "id": "probe_gates",
+      "type": "gate_dynamics",
+      "params": { "sample_idx": 0, "max_steps": 48, "saturation_thresh": 0.1 },
+      "position": { "x": 670.0, "y": 380.0 }
+    },
+    {
+      "id": "probe_traj",
+      "type": "hidden_trajectory",
+      "params": { "method": "pca", "sample_idx": 0, "max_points": 48 },
+      "position": { "x": 980.0, "y": 380.0 }
+    },
+    {
+      "id": "probe_energy",
+      "type": "step_energy",
+      "params": { "sample_idx": 0, "max_steps": 48, "norm_mode": "l2" },
+      "position": { "x": 1300.0, "y": 380.0 }
+    }
+  ],
+  "edges": [
+    { "id": "e_x", "src_node": "ts_src", "src_port": "x", "dst_node": "lstm", "dst_port": "x" },
+    { "id": "e_h", "src_node": "lstm", "src_port": "last_h", "dst_node": "ln", "dst_port": "x" },
+    { "id": "e_head", "src_node": "ln", "src_port": "out", "dst_node": "head", "dst_port": "x" },
+    { "id": "e_pred", "src_node": "head", "src_port": "out", "dst_node": "mse", "dst_port": "pred" },
+    { "id": "e_target", "src_node": "ts_src", "src_port": "y", "dst_node": "mse", "dst_port": "target" },
+    { "id": "e_watch", "src_node": "mse", "src_port": "loss", "dst_node": "watch_mse", "dst_port": "x" },
+    { "id": "e_peek", "src_node": "head", "src_port": "out", "dst_node": "peek_pred", "dst_port": "x" },
+    { "id": "e_tap_i", "src_node": "lstm", "src_port": "gate_i", "dst_node": "probe_gates", "dst_port": "i", "edge_kind": "tap" },
+    { "id": "e_tap_f", "src_node": "lstm", "src_port": "gate_f", "dst_node": "probe_gates", "dst_port": "f", "edge_kind": "tap" },
+    { "id": "e_tap_o", "src_node": "lstm", "src_port": "gate_o", "dst_node": "probe_gates", "dst_port": "o", "edge_kind": "tap" },
+    { "id": "e_tap_c", "src_node": "lstm", "src_port": "cell_state", "dst_node": "probe_gates", "dst_port": "c", "edge_kind": "tap" },
+    { "id": "e_tap_h", "src_node": "lstm", "src_port": "hidden_states", "dst_node": "probe_traj", "dst_port": "x", "edge_kind": "tap" },
+    { "id": "e_energy", "src_node": "lstm", "src_port": "out", "dst_node": "probe_energy", "dst_port": "x" }
+  ],
+  "losses": [
+    { "node_id": "mse", "weight": 1.0, "enabled": true }
+  ],
+  "trainer": {
+    "optimizer": "adam",
+    "lr": 0.005,
+    "batch_size": 32,
+    "epochs": 10,
+    "grad_clip": 1.0,
+    "eval_every_steps": 40
+  }
+}

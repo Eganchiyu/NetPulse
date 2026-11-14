@@ -1,0 +1,60 @@
+{
+  "name": "template_spiral_mlp",
+  "nodes": [
+    {
+      "id": "src",
+      "type": "spiral_data",
+      "params": {
+        "num_classes": 3,
+        "points_per_class": 200,
+        "noise": 0.12
+      },
+      "position": { "x": 60.0, "y": 240.0 }
+    },
+    {
+      "id": "mlp",
+      "type": "mlp_block",
+      "params": {
+        "dims": [32, 32, 3],
+        "activation": "relu"
+      },
+      "position": { "x": 360.0, "y": 220.0 }
+    },
+    {
+      "id": "ce",
+      "type": "cross_entropy_loss",
+      "params": {},
+      "position": { "x": 680.0, "y": 170.0 }
+    },
+    {
+      "id": "reg",
+      "type": "activation_reg_loss",
+      "params": { "mode": "l2" },
+      "position": { "x": 680.0, "y": 350.0 }
+    },
+    {
+      "id": "watch_loss",
+      "type": "scalar_watch",
+      "params": { "reduce": "mean", "ema_alpha": 0.15, "history_len": 120 },
+      "position": { "x": 980.0, "y": 170.0 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "src_node": "src", "src_port": "x", "dst_node": "mlp", "dst_port": "x" },
+    { "id": "e2", "src_node": "mlp", "src_port": "out", "dst_node": "ce", "dst_port": "logits" },
+    { "id": "e3", "src_node": "src", "src_port": "y", "dst_node": "ce", "dst_port": "target" },
+    { "id": "e4", "src_node": "mlp", "src_port": "layer_1", "dst_node": "reg", "dst_port": "x", "edge_kind": "tap" },
+    { "id": "e5", "src_node": "ce", "src_port": "loss", "dst_node": "watch_loss", "dst_port": "x" }
+  ],
+  "losses": [
+    { "node_id": "ce", "weight": 1.0, "enabled": true },
+    { "node_id": "reg", "weight": 0.01, "enabled": true }
+  ],
+  "trainer": {
+    "optimizer": "adam",
+    "lr": 0.02,
+    "batch_size": 64,
+    "epochs": 20,
+    "eval_every_steps": 40
+  }
+}

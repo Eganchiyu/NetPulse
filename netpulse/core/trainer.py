@@ -60,7 +60,7 @@ def _to_signal_batch(
         return {
             source_id: {
                 "x": Signal(data=x, mask=mask, meta={"layout": x_layout}),
-                "y": Signal(data=y, meta={"layout": "B"}),
+                "y": Signal(data=y, meta={"layout": _infer_x_layout(y) if y.ndim >= 2 else "B"}),
             }
         }
     if isinstance(raw_batch, dict):
@@ -74,7 +74,7 @@ def _to_signal_batch(
             moved[k] = Signal(
                 data=vt,
                 mask=mask_dev if k == "x" else None,
-                meta={"layout": _infer_x_layout(vt) if k != "y" else "B"},
+                meta={"layout": _infer_x_layout(vt) if (k != "y" or vt.ndim >= 2) else "B"},
             )
         return {source_id: moved}
     raise TypeError(f"Unsupported batch format from source '{source_id}': {type(raw_batch)}")

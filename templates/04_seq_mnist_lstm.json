@@ -1,0 +1,69 @@
+{
+  "name": "template_seq_mnist_lstm",
+  "nodes": [
+    {
+      "id": "mnist",
+      "type": "mnist_data",
+      "params": { "data_dir": ".cache/mnist", "subset_train": 1024, "subset_val": 256 },
+      "position": { "x": 60.0, "y": 240.0 }
+    },
+    {
+      "id": "img2seq",
+      "type": "image_to_seq",
+      "params": { "mode": "rows" },
+      "position": { "x": 350.0, "y": 220.0 }
+    },
+    {
+      "id": "lstm",
+      "type": "lstm",
+      "params": { "hidden_size": 48, "num_layers": 1, "forget_bias": 1.0, "init": "orthogonal" },
+      "position": { "x": 650.0, "y": 220.0 }
+    },
+    {
+      "id": "head",
+      "type": "linear",
+      "params": { "out_features": 10, "init": "xavier_normal" },
+      "position": { "x": 960.0, "y": 170.0 }
+    },
+    {
+      "id": "ce",
+      "type": "cross_entropy_loss",
+      "params": {},
+      "position": { "x": 1250.0, "y": 170.0 }
+    },
+    {
+      "id": "probe_gates",
+      "type": "gate_dynamics",
+      "params": { "sample_idx": 0, "max_steps": 32, "saturation_thresh": 0.1 },
+      "position": { "x": 960.0, "y": 380.0 }
+    },
+    {
+      "id": "probe_traj",
+      "type": "hidden_trajectory",
+      "params": { "method": "pca", "sample_idx": 0, "max_points": 32 },
+      "position": { "x": 1280.0, "y": 380.0 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "src_node": "mnist", "src_port": "x", "dst_node": "img2seq", "dst_port": "x" },
+    { "id": "e2", "src_node": "img2seq", "src_port": "out", "dst_node": "lstm", "dst_port": "x" },
+    { "id": "e3", "src_node": "lstm", "src_port": "last_h", "dst_node": "head", "dst_port": "x" },
+    { "id": "e4", "src_node": "head", "src_port": "out", "dst_node": "ce", "dst_port": "logits" },
+    { "id": "e5", "src_node": "mnist", "src_port": "y", "dst_node": "ce", "dst_port": "target" },
+    { "id": "e6", "src_node": "lstm", "src_port": "gate_i", "dst_node": "probe_gates", "dst_port": "i", "edge_kind": "tap" },
+    { "id": "e7", "src_node": "lstm", "src_port": "gate_f", "dst_node": "probe_gates", "dst_port": "f", "edge_kind": "tap" },
+    { "id": "e8", "src_node": "lstm", "src_port": "gate_o", "dst_node": "probe_gates", "dst_port": "o", "edge_kind": "tap" },
+    { "id": "e9", "src_node": "lstm", "src_port": "cell_state", "dst_node": "probe_gates", "dst_port": "c", "edge_kind": "tap" },
+    { "id": "e10", "src_node": "lstm", "src_port": "hidden_states", "dst_node": "probe_traj", "dst_port": "x", "edge_kind": "tap" }
+  ],
+  "losses": [
+    { "node_id": "ce", "weight": 1.0, "enabled": true }
+  ],
+  "trainer": {
+    "optimizer": "adam",
+    "lr": 0.003,
+    "batch_size": 64,
+    "epochs": 4,
+    "eval_every_steps": 32
+  }
+}

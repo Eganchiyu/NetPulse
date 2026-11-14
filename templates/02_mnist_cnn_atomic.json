@@ -1,0 +1,101 @@
+{
+  "name": "template_mnist_cnn_atomic",
+  "nodes": [
+    {
+      "id": "mnist",
+      "type": "mnist_data",
+      "params": { "data_dir": ".cache/mnist", "subset_train": 1024, "subset_val": 256, "normalize": true },
+      "position": { "x": 60.0, "y": 240.0 }
+    },
+    {
+      "id": "conv1",
+      "type": "conv2d",
+      "params": { "out_channels": 16, "kernel_size": 3, "stride": 1, "padding": 1, "init": "kaiming_normal" },
+      "position": { "x": 340.0, "y": 220.0 }
+    },
+    {
+      "id": "bn1",
+      "type": "batch_norm2d",
+      "params": {},
+      "position": { "x": 610.0, "y": 220.0 }
+    },
+    {
+      "id": "act1",
+      "type": "activation",
+      "params": { "kind": "relu" },
+      "position": { "x": 880.0, "y": 220.0 }
+    },
+    {
+      "id": "pool1",
+      "type": "pool2d",
+      "params": { "mode": "max", "kernel_size": 2, "stride": 2 },
+      "position": { "x": 1150.0, "y": 220.0 }
+    },
+    {
+      "id": "flat",
+      "type": "flatten",
+      "params": {},
+      "position": { "x": 1420.0, "y": 220.0 }
+    },
+    {
+      "id": "fc",
+      "type": "linear",
+      "params": { "out_features": 64, "init": "xavier_normal" },
+      "position": { "x": 1690.0, "y": 220.0 }
+    },
+    {
+      "id": "act_fc",
+      "type": "activation",
+      "params": { "kind": "relu" },
+      "position": { "x": 1960.0, "y": 220.0 }
+    },
+    {
+      "id": "drop",
+      "type": "dropout",
+      "params": { "p": 0.1 },
+      "position": { "x": 2230.0, "y": 220.0 }
+    },
+    {
+      "id": "head",
+      "type": "linear",
+      "params": { "out_features": 10 },
+      "position": { "x": 2500.0, "y": 220.0 }
+    },
+    {
+      "id": "ce",
+      "type": "cross_entropy_loss",
+      "params": {},
+      "position": { "x": 2780.0, "y": 260.0 }
+    },
+    {
+      "id": "feat_map",
+      "type": "heatmap_preview",
+      "params": { "colormap": "viridis", "max_size": 32, "channel": 0, "sample_idx": 0 },
+      "position": { "x": 1150.0, "y": 460.0 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "src_node": "mnist", "src_port": "x", "dst_node": "conv1", "dst_port": "x" },
+    { "id": "e2", "src_node": "conv1", "src_port": "out", "dst_node": "bn1", "dst_port": "x" },
+    { "id": "e3", "src_node": "bn1", "src_port": "out", "dst_node": "act1", "dst_port": "x" },
+    { "id": "e4", "src_node": "act1", "src_port": "out", "dst_node": "pool1", "dst_port": "x" },
+    { "id": "e5", "src_node": "pool1", "src_port": "out", "dst_node": "flat", "dst_port": "x" },
+    { "id": "e6", "src_node": "flat", "src_port": "out", "dst_node": "fc", "dst_port": "x" },
+    { "id": "e7", "src_node": "fc", "src_port": "out", "dst_node": "act_fc", "dst_port": "x" },
+    { "id": "e8", "src_node": "act_fc", "src_port": "out", "dst_node": "drop", "dst_port": "x" },
+    { "id": "e9", "src_node": "drop", "src_port": "out", "dst_node": "head", "dst_port": "x" },
+    { "id": "e10", "src_node": "head", "src_port": "out", "dst_node": "ce", "dst_port": "logits" },
+    { "id": "e11", "src_node": "mnist", "src_port": "y", "dst_node": "ce", "dst_port": "target" },
+    { "id": "e12", "src_node": "act1", "src_port": "out", "dst_node": "feat_map", "dst_port": "x" }
+  ],
+  "losses": [
+    { "node_id": "ce", "weight": 1.0, "enabled": true }
+  ],
+  "trainer": {
+    "optimizer": "adam",
+    "lr": 0.002,
+    "batch_size": 64,
+    "epochs": 4,
+    "eval_every_steps": 32
+  }
+}

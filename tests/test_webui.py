@@ -122,6 +122,69 @@ def test_webui_save_graph_and_path_guard(tmp_path: Path) -> None:
             body = await r_ok.json()
             assert body["ok"] is True
             assert (tmp_path / "saved_spiral.json").exists()
+
+            # 导出为 YAML 与 JSON
+            r_exp_yaml = await client.post(
+                "/api/graph/export",
+                json={"name": "saved_spiral.json", "format": "yaml", "graph": spiral},
+            )
+            assert r_exp_yaml.status == 200
+            exp_yaml = await r_exp_yaml.json()
+            assert exp_yaml["filename"] == "saved_spiral.yaml"
+            assert "spiral_data" in exp_yaml["content"]
+
+            # 导入 YAML 并可选择保存到 graphs_dir
+            r_imp = await client.post(
+                "/api/graph/import",
+                json={"name": "imported_spiral.yaml", "content": exp_yaml["content"], "save": True},
+            )
+            assert r_imp.status == 200
+            imp_body = await r_imp.json()
+            assert imp_body["ok"] is True
+            assert imp_body["saved"] is True
+            assert imp_body["graph"]["erc"]["passed"] is True
+            assert (tmp_path / "imported_spiral.yaml").exists()
+
+            # 加载列表应包含两个工作流
+            r_list2 = await client.get("/api/graphs")
+            graphs2 = (await r_list2.json())["graphs"]
+            assert "saved_spiral.json" in graphs2
+            assert "imported_spiral.yaml" in graphs2
+
+            # 删除工作流（含路径穿越防护）
+            r_del_bad = await client.post("/api/graph/delete", json={"name": "../evil.json"})
+            assert r_del_bad.status == 400
+            r_del = await client.post("/api/graph/delete", json={"name": "imported_spiral.yaml"})
+            assert r_del.status == 200
+            assert not (tmp_path / "imported_spiral.yaml").exists()
+        finally:
+            await client.close()
+
+    asyncio.run(_run())
+
+
+def test_webui_templates_api() -> None:
+    async def _run() -> None:
+        app = create_app(graphs_dir="examples", plugins_dir=None, templates_dir="templates")
+        server = TestServer(app)
+        client = TestClient(server)
+        await client.start_server()
+        try:
+            r_tpls = await client.get("/api/templates")
+            assert r_tpls.status == 200
+            tpls = (await r_tpls.json())["templates"]
+            files = [t["file"] for t in tpls]
+            assert "01_spiral_mlp.json" in files
+            assert "05_lstm_time_series_forecast.json" in files
+
+            r_tpl = await client.get("/api/template", params={"name": "05_lstm_time_series_forecast.json"})
+            assert r_tpl.status == 200
+            data = await r_tpl.json()
+            assert data["is_template"] is True
+            assert data["erc"]["passed"] is True
+
+            r_bad = await client.get("/api/template", params={"name": "../secret.json"})
+            assert r_bad.status == 404
         finally:
             await client.close()
 

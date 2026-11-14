@@ -1,0 +1,75 @@
+{
+  "name": "template_mnist_resnet_bridge",
+  "nodes": [
+    {
+      "id": "mnist",
+      "type": "mnist_data",
+      "params": { "data_dir": ".cache/mnist", "subset_train": 1024, "subset_val": 256 },
+      "position": { "x": 60.0, "y": 240.0 }
+    },
+    {
+      "id": "main_cnn",
+      "type": "cnn_block",
+      "params": { "channels": [16, 32], "kernel_size": 3, "pool_every": 2, "activation": "relu" },
+      "position": { "x": 350.0, "y": 140.0 }
+    },
+    {
+      "id": "skip_pool",
+      "type": "pool2d",
+      "params": { "mode": "avg", "kernel_size": 2, "stride": 2 },
+      "position": { "x": 350.0, "y": 380.0 }
+    },
+    {
+      "id": "res_add",
+      "type": "tensor_add",
+      "params": { "alpha": 1.0, "beta": 0.5 },
+      "position": { "x": 680.0, "y": 230.0 }
+    },
+    {
+      "id": "gap",
+      "type": "global_avg_pool",
+      "params": {},
+      "position": { "x": 960.0, "y": 230.0 }
+    },
+    {
+      "id": "head",
+      "type": "mlp_block",
+      "params": { "dims": [64, 10], "activation": "relu" },
+      "position": { "x": 1240.0, "y": 230.0 }
+    },
+    {
+      "id": "ce",
+      "type": "cross_entropy_loss",
+      "params": {},
+      "position": { "x": 1540.0, "y": 170.0 }
+    },
+    {
+      "id": "ortho_reg",
+      "type": "activation_reg_loss",
+      "params": { "mode": "orthogonal" },
+      "position": { "x": 1540.0, "y": 360.0 }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "src_node": "mnist", "src_port": "x", "dst_node": "main_cnn", "dst_port": "x" },
+    { "id": "e2", "src_node": "mnist", "src_port": "x", "dst_node": "skip_pool", "dst_port": "x" },
+    { "id": "e3", "src_node": "main_cnn", "src_port": "out", "dst_node": "res_add", "dst_port": "a" },
+    { "id": "e4", "src_node": "skip_pool", "src_port": "out", "dst_node": "res_add", "dst_port": "b", "bridge": "auto" },
+    { "id": "e5", "src_node": "res_add", "src_port": "out", "dst_node": "gap", "dst_port": "x" },
+    { "id": "e6", "src_node": "gap", "src_port": "out", "dst_node": "head", "dst_port": "x" },
+    { "id": "e7", "src_node": "head", "src_port": "out", "dst_node": "ce", "dst_port": "logits" },
+    { "id": "e8", "src_node": "mnist", "src_port": "y", "dst_node": "ce", "dst_port": "target" },
+    { "id": "e9", "src_node": "head", "src_port": "layer_0", "dst_node": "ortho_reg", "dst_port": "x", "edge_kind": "tap" }
+  ],
+  "losses": [
+    { "node_id": "ce", "weight": 1.0, "enabled": true },
+    { "node_id": "ortho_reg", "weight": 0.05, "enabled": true }
+  ],
+  "trainer": {
+    "optimizer": "adam",
+    "lr": 0.003,
+    "batch_size": 64,
+    "epochs": 4,
+    "eval_every_steps": 32
+  }
+}

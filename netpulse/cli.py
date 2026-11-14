@@ -33,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--host", default="127.0.0.1", help="监听地址")
     p_serve.add_argument("--port", type=int, default=8765, help="监听端口")
     p_serve.add_argument("--graphs-dir", default="examples", help="计算图目录")
+    p_serve.add_argument("--templates-dir", default="templates", help="工作流模板目录")
     p_serve.add_argument("--plugins", default="plugins", help="自定义插件目录")
 
     args = parser.parse_args(argv)
@@ -44,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
             port=args.port,
             graphs_dir=args.graphs_dir,
             plugins_dir=args.plugins,
+            templates_dir=args.templates_dir,
         )
         return 0
 

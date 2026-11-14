@@ -11,6 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Optional
 
+import yaml
 from aiohttp import web
 from pydantic import ValidationError
 
@@ -212,8 +213,10 @@ def _serialize_graph_payload(graph_path: Path, plugins_dir: Optional[str]) -> di
 def create_app(
     graphs_dir: str | Path = "examples",
     plugins_dir: Optional[str] = "plugins",
+    templates_dir: str | Path = "templates",
 ) -> web.Application:
     graphs_root = Path(graphs_dir)
+    templates_root = Path(templates_dir)
     html_path = Path(__file__).parent / "index.html"
     clients: set[web.WebSocketResponse] = set()
     event_loop_holder: dict[str, Optional[asyncio.AbstractEventLoop]] = {"loop": None}
@@ -259,11 +262,17 @@ def create_app(
             await ws.close()
         clients.clear()
 
-    def _list_graph_files() -> list[Path]:
-        if not graphs_root.exists():
+    def _list_dir_graphs(root: Path) -> list[Path]:
+        if not root.exists():
             return []
-        files = list(graphs_root.glob("*.json")) + list(graphs_root.glob("*.yaml")) + list(graphs_root.glob("*.yml"))
+        files = list(root.glob("*.json")) + list(root.glob("*.yaml")) + list(root.glob("*.yml"))
         return sorted(files, key=lambda p: p.name)
+
+    def _list_graph_files() -> list[Path]:
+        return _list_dir_graphs(graphs_root)
+
+    def _list_template_files() -> list[Path]:
+        return _list_dir_graphs(templates_root)
 
     def _resolve_safe_save_path(raw_name: str) -> Optional[Path]:
         name = Path(raw_name).name
@@ -275,6 +284,18 @@ def create_app(
         root_resolved = graphs_root.resolve()
         candidate = (graphs_root / name).resolve()
         if candidate.parent != root_resolved:
+            return None
+        return candidate
+
+    def _resolve_safe_existing_path(root: Path, raw_name: str) -> Optional[Path]:
+        name = Path(raw_name).name
+        if not name or name != raw_name or ".." in raw_name or "/" in raw_name or "\\" in raw_name:
+            return None
+        if not root.exists():
+            return None
+        root_resolved = root.resolve()
+        candidate = (root / name).resolve()
+        if candidate.parent != root_resolved or not candidate.is_file():
             return None
         return candidate
 
@@ -347,6 +368,122 @@ def create_app(
         payload = serialize_graph_ir(graph, reg, file_name=target.name)
         return web.json_response({"ok": True, "name": target.name, "graph": payload})
 
+    async def api_graph_delete(request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "无效的 JSON 请求体"}, status=400)
+
+        raw_name = str(body.get("name", "")).strip()
+        if not raw_name or raw_name != Path(raw_name).name or ".." in raw_name or "/" in raw_name or "\\" in raw_name:
+            return web.json_response({"error": "非法文件名"}, status=400)
+        target = _resolve_safe_existing_path(graphs_root, raw_name)
+        if target is None:
+            return web.json_response({"error": f"找不到图文件: {raw_name}"}, status=404)
+        target.unlink()
+        return web.json_response({"ok": True, "deleted": raw_name})
+
+    async def api_graph_import(request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "无效的 JSON 请求体"}, status=400)
+
+        raw_name = str(body.get("name", "imported_graph.json")).strip() or "imported_graph.json"
+        safe_name = Path(raw_name).name
+        if Path(safe_name).suffix.lower() not in {".json", ".yaml", ".yml"}:
+            safe_name = f"{safe_name}.json"
+
+        content = body.get("content")
+        raw_graph: Any = None
+        if isinstance(content, dict):
+            raw_graph = content
+        elif isinstance(content, str):
+            try:
+                if safe_name.lower().endswith((".yaml", ".yml")):
+                    raw_graph = yaml.safe_load(content)
+                else:
+                    try:
+                        raw_graph = json.loads(content)
+                    except json.JSONDecodeError:
+                        raw_graph = yaml.safe_load(content)
+            except Exception as exc:
+                return web.json_response({"error": f"解析工作流文件失败: {exc}"}, status=400)
+        else:
+            return web.json_response({"error": "缺少工作流文件内容"}, status=400)
+
+        try:
+            graph = GraphIR.model_validate(raw_graph)
+        except ValidationError as exc:
+            return web.json_response({"error": f"GraphIR 校验失败: {exc}"}, status=400)
+
+        saved_name: Optional[str] = None
+        if bool(body.get("save", False)):
+            save_target = _resolve_safe_save_path(safe_name)
+            if save_target is None:
+                return web.json_response({"error": "非法文件名"}, status=400)
+            graph.to_file(save_target)
+            saved_name = save_target.name
+
+        reg = get_default_registry(plugins_dir)
+        payload = serialize_graph_ir(graph, reg, file_name=saved_name or safe_name)
+        return web.json_response({"ok": True, "name": saved_name or safe_name, "saved": saved_name is not None, "graph": payload})
+
+    async def api_graph_export(request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"error": "无效的 JSON 请求体"}, status=400)
+
+        fmt = str(body.get("format", "json")).lower()
+        if fmt not in {"json", "yaml", "yml"}:
+            return web.json_response({"error": "导出格式仅支持 json 或 yaml"}, status=400)
+
+        try:
+            graph = GraphIR.model_validate(body.get("graph"))
+        except ValidationError as exc:
+            return web.json_response({"error": f"GraphIR 校验失败: {exc}"}, status=400)
+
+        base_name = Path(str(body.get("name") or graph.name or "workflow")).stem or "workflow"
+        ext = "yaml" if fmt in {"yaml", "yml"} else "json"
+        if ext == "yaml":
+            text = yaml.safe_dump(graph.model_dump(), allow_unicode=True, sort_keys=False)
+            mime = "application/x-yaml"
+        else:
+            text = graph.to_json(indent=2) + "\n"
+            mime = "application/json"
+        return web.json_response({
+            "ok": True,
+            "filename": f"{base_name}.{ext}",
+            "content": text,
+            "mime": mime,
+        })
+
+    async def api_templates(_request: web.Request) -> web.Response:
+        items = []
+        for p in _list_template_files():
+            try:
+                g = GraphIR.from_file(p)
+                items.append({
+                    "file": p.name,
+                    "name": g.name,
+                    "node_count": len(g.nodes),
+                    "edge_count": len(g.edges),
+                    "node_types": sorted({n.type for n in g.nodes}),
+                })
+            except Exception:
+                continue
+        return web.json_response({"templates": items})
+
+    async def api_template(request: web.Request) -> web.Response:
+        raw_name = str(request.query.get("name", "")).strip()
+        target = _resolve_safe_existing_path(templates_root, raw_name)
+        if target is None:
+            return web.json_response({"error": f"找不到模板文件: {raw_name}"}, status=404)
+        payload = _serialize_graph_payload(target, plugins_dir)
+        payload["is_template"] = True
+        return web.json_response(payload)
+
     async def api_train_start(request: web.Request) -> web.Response:
         body = await request.json()
         reg = get_default_registry(plugins_dir)
@@ -411,6 +548,11 @@ def create_app(
         web.get("/api/graph", api_graph),
         web.post("/api/erc/check", api_erc_check),
         web.post("/api/graph/save", api_graph_save),
+        web.post("/api/graph/delete", api_graph_delete),
+        web.post("/api/graph/import", api_graph_import),
+        web.post("/api/graph/export", api_graph_export),
+        web.get("/api/templates", api_templates),
+        web.get("/api/template", api_template),
         web.post("/api/train/start", api_train_start),
         web.post("/api/train/speed", api_train_speed),
         web.post("/api/train/stop", api_train_stop),
@@ -427,6 +569,7 @@ def run_server(
     port: int = 8765,
     graphs_dir: str | Path = "examples",
     plugins_dir: Optional[str] = "plugins",
+    templates_dir: str | Path = "templates",
 ) -> None:
-    app = create_app(graphs_dir=graphs_dir, plugins_dir=plugins_dir)
+    app = create_app(graphs_dir=graphs_dir, plugins_dir=plugins_dir, templates_dir=templates_dir)
     web.run_app(app, host=host, port=port)

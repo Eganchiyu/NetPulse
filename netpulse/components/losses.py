@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
@@ -97,3 +97,60 @@ class ActivationRegLoss(BaseComponent):
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
         mode = str(params.get("mode", "l1")).lower()
         return _ActivationRegModule(mode=mode)
+
+
+class _MSELossModule(nn.Module):
+    def __init__(self, reduction: str = "mean") -> None:
+        super().__init__()
+        self.reduction = reduction
+
+    def forward(self, inputs: dict[str, Signal]) -> dict[str, Signal]:
+        pred = inputs["pred"].data.float()
+        target = inputs["target"].data.float()
+        loss = F.mse_loss(pred, target, reduction=self.reduction)
+        return {"loss": Signal(data=loss, meta={"layout": "SCALAR"})}
+
+
+@register_component("mse_loss")
+class MSELoss(BaseComponent):
+    """均方误差（MSE）回归监督损失节点。"""
+
+    category = "loss"
+    display_name = "MSELoss"
+    description = "均方误差回归损失（用于时序预测、连续值回归任务）"
+
+    @classmethod
+    def param_schema(cls) -> list[ParamSpec]:
+        return [
+            ParamSpec(
+                "reduction",
+                "select",
+                "mean",
+                options=["mean", "sum"],
+                description="批次损失聚合方式",
+            ),
+        ]
+
+    @classmethod
+    def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
+        return ComponentSignature(
+            inputs=[
+                PortSpec(name="pred", kind="tensor", rank=[1, 2, 3, 4], layout="ANY"),
+                PortSpec(name="target", kind="tensor", rank=[1, 2, 3, 4], layout="ANY"),
+            ],
+            outputs=[PortSpec(name="loss", kind="loss", rank=[0], layout="SCALAR")],
+        )
+
+    def expected_input_spec(
+        self,
+        params: dict[str, Any],
+        port_name: str,
+        actual: ResolvedSpec,
+        resolved_in_specs: dict[str, ResolvedSpec],
+    ) -> Optional[ResolvedSpec]:
+        if port_name == "target" and "pred" in resolved_in_specs:
+            return resolved_in_specs["pred"]
+        return None
+
+    def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
+        return _MSELossModule(reduction=str(params.get("reduction", "mean")))
