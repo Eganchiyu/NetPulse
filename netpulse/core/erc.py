@@ -395,6 +395,70 @@ def run_erc(graph: GraphIR, registry: ComponentRegistry) -> ERCResult:
                 )
             )
 
+    # 梯度阻断 / 梯度观测的静态检查
+    for edge in graph.edges:
+        if edge.src_node not in node_map or edge.dst_node not in node_map:
+            continue
+        dst_cls = registry.get(node_map[edge.dst_node].type) if registry.has(node_map[edge.dst_node].type) else None
+        if edge.stop_grad and dst_cls is not None and dst_cls.category == "loss":
+            diagnostics.append(
+                Diagnostic(
+                    level="warning",
+                    code="STOP_GRAD_ON_LOSS_EDGE",
+                    edge_id=edge.id,
+                    node_id=edge.dst_node,
+                    message=(
+                        f"边 '{edge.id}' 阻断了梯度，但下游是 Loss 节点 '{edge.dst_node}'："
+                        f"该 Loss 分支将失去梯度信号"
+                    ),
+                )
+            )
+
+    # 全图所有 Loss 分支的可反传输入边都被阻断 => total_loss 不含可反传项，训练期必然报错
+    cat_of = {
+        nid: (registry.get(node_map[nid].type).category if registry.has(node_map[nid].type) else None)
+        for nid in node_map
+    }
+    any_live_grad = False
+    blocked_loss_nodes: list[str] = []
+    for nid, cat in cat_of.items():
+        if cat != "loss":
+            continue
+        grad_edges: list[EdgeIR] = []
+        for e in graph.edges:
+            if e.dst_node != nid:
+                continue
+            src_sig = signatures.get(e.src_node)
+            if src_sig is None:
+                continue
+            if e.edge_kind == "tap":
+                tap = src_sig.tap_map().get(e.src_port)
+                port_spec = tap.spec if tap is not None else None
+            else:
+                port_spec = src_sig.output_map().get(e.src_port)
+            if port_spec is not None and not str(port_spec.dtype).startswith(("float", "bfloat", "double")):
+                continue
+            grad_edges.append(e)
+        if not grad_edges:
+            continue
+        if all(e.stop_grad for e in grad_edges):
+            blocked_loss_nodes.append(nid)
+        else:
+            any_live_grad = True
+
+    if blocked_loss_nodes and not any_live_grad:
+        diagnostics.append(
+            Diagnostic(
+                level="error",
+                code="LOSS_GRAD_BLOCKED",
+                node_id=blocked_loss_nodes[0],
+                message=(
+                    f"Loss 节点 {blocked_loss_nodes} 的可反传输入边全部启用了梯度阻断，"
+                    f"total_loss 无梯度可反传"
+                ),
+            )
+        )
+
     # 拓扑排序与环检测
     q = deque([nid for nid, deg in indegree.items() if deg == 0])
     topo_order: list[str] = []

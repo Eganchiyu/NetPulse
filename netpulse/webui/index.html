@@ -479,6 +479,13 @@
     font-size: 10px; letter-spacing: .2px;
   }
   .hint-text { color: #6e7681; font-size: 10.5px; line-height: 1.5; }
+  .edge-grad-box { display: flex; flex-direction: column; gap: 6px; }
+  .edge-grad-row { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+  .edge-grad-row input[type="checkbox"] { width: 13px; height: 13px; accent-color: #22d3ee; cursor: pointer; }
+  .edge-grad-live {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    font-size: 10.5px; font-family: ui-monospace, monospace; color: var(--muted);
+  }
 
   /* 元件库卡片 */
   .palette-item { align-items: flex-start; padding: 7px 9px; }
@@ -786,6 +793,7 @@
       <button class="probe-modal-tab" data-view="gate_dynamics">门控演化</button>
       <button class="probe-modal-tab" data-view="trajectory">相空间轨迹</button>
       <button class="probe-modal-tab" data-view="step_energy">步能量</button>
+      <button class="probe-modal-tab" data-view="grad">梯度</button>
       <button class="probe-modal-tab" data-view="heatmap">热力图</button>
       <button class="probe-modal-tab" data-view="scalar">标量曲线</button>
       <button class="probe-modal-tab" data-view="image">图像</button>
@@ -837,6 +845,7 @@ const state = {
   ws: null,
   nodeEls: {},
   edgeMeta: [],
+  gradStats: {},          // { edgeId: {shape, norm, mean, std} } 反向梯度总线快照
   lastPulseTs: 0,
   wireDrag: null,         // { srcNode, srcPort, isTap }
   ercTimer: null,
@@ -1304,6 +1313,30 @@ function getPortPos(nodeId, portName, side, isTap = false) {
   };
 }
 
+// 边标签：在图尺寸标签后追加梯度阻断 / 梯度观测标记
+function edgeLabelText(edge, baseLabel) {
+  let text = baseLabel || "";
+  if (edge.stop_grad) text = text ? `⊘ ${text}` : "⊘ 梯度阻断";
+  if (edge.watch_grad) {
+    const g = state.gradStats ? state.gradStats[edge.id] : null;
+    const gtxt = g ? `∇${Number(g.norm).toFixed(2)}` : "∇…";
+    text = text ? `${text} · ${gtxt}` : gtxt;
+  }
+  return text;
+}
+
+// 仅刷新梯度观测边的标签，避免每步重建整层 SVG
+function refreshEdgeGradLabels() {
+  for (const item of state.edgeMeta) {
+    if (!item.edge.watch_grad || !item.labelTxt) continue;
+    const text = edgeLabelText(item.edge, item.labelBase);
+    item.labelTxt.textContent = text;
+    const w = Math.max(44, text.length * 6.3 + 10);
+    item.labelRect.setAttribute("x", item.midX - w / 2);
+    item.labelRect.setAttribute("width", w);
+  }
+}
+
 function renderEdges() {
   const group = $("edgesGroup");
   group.innerHTML = "";
@@ -1331,6 +1364,10 @@ function renderEdges() {
     path.setAttribute("stroke-opacity", isSelected ? "1" : "0.75");
     path.setAttribute("class", `edge-visible${isSelected ? " selected" : ""}${isErr ? " error" : ""}`);
     if (isTap) path.setAttribute("stroke-dasharray", "6 4");
+    if (edge.stop_grad) {
+      path.setAttribute("stroke-dasharray", isTap ? "2 4" : "8 5");
+      path.setAttribute("stroke-opacity", "0.5");
+    }
     group.appendChild(path);
 
     const hit = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1349,12 +1386,15 @@ function renderEdges() {
 
     const midX = (p1.x + p2.x) / 2;
     const midY = (p1.y + p2.y) / 2;
-    let labelText = edge.shape ? `(${edge.shape.join(",")})` : "";
+    let baseLabel = edge.shape ? `(${edge.shape.join(",")})` : "";
     if (edge.autobridge) {
-      labelText = `AutoBridge ${edge.autobridge.from.join("×")}→${edge.autobridge.to.join("×")}`;
+      baseLabel = `AutoBridge ${edge.autobridge.from.join("×")}→${edge.autobridge.to.join("×")}`;
     } else if (edge.bridge === "auto" && !isErr) {
-      labelText = labelText ? `${labelText} [auto]` : "[auto]";
+      baseLabel = baseLabel ? `${baseLabel} [auto]` : "[auto]";
     }
+    const labelText = edgeLabelText(edge, baseLabel);
+    let labelRect = null;
+    let labelTxt = null;
     if (labelText) {
       const w = Math.max(44, labelText.length * 6.3 + 10);
       const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -1371,8 +1411,10 @@ function renderEdges() {
       txt.setAttribute("class", "edge-label-txt");
       txt.textContent = labelText;
       group.appendChild(txt);
+      labelRect = rect;
+      labelTxt = txt;
     }
-    state.edgeMeta.push({ edge, path, color });
+    state.edgeMeta.push({ edge, path, color, midX, midY, labelBase: baseLabel, labelRect, labelTxt });
   }
 }
 
@@ -1392,6 +1434,7 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
         id: e.id, src_node: e.src_node, src_port: e.src_port,
         dst_node: e.dst_node, dst_port: e.dst_port,
         edge_kind: e.edge_kind || "signal", bridge: e.bridge || "none",
+        stop_grad: Boolean(e.stop_grad), watch_grad: Boolean(e.watch_grad),
       })),
       losses: deepClone(data.losses || []),
       trainer: deepClone(data.trainer || {}),
@@ -1686,6 +1729,8 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
               dst_port: dstPort,
               edge_kind: state.wireDrag.isTap ? "tap" : "signal",
               bridge: "auto",
+              stop_grad: false,
+              watch_grad: false,
             });
             runLiveErc();
           }
@@ -1706,6 +1751,20 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
     else renderMinimap();
     renderInspector();
   });
+}
+
+// 连线检查器里的梯度实时读数
+function edgeGradLiveHtml(edge) {
+  const g = state.gradStats ? state.gradStats[edge.id] : null;
+  if (!g) {
+    return edge.watch_grad
+      ? `<span style="color:var(--muted)">等待反传（开始训练后刷新）</span>`
+      : `<span style="color:var(--muted)">未开启梯度观测</span>`;
+  }
+  return `<span>∇ L2 = <b style="color:#22d3ee">${Number(g.norm).toFixed(4)}</b></span>`
+    + `<span>μ ${Number(g.mean).toFixed(4)}</span>`
+    + `<span>σ ${Number(g.std).toFixed(4)}</span>`
+    + `<span class="en-name">(${g.shape.join(",")})</span>`;
 }
 
 function renderInspector() {
@@ -1740,12 +1799,39 @@ function renderInspector() {
               <option value="none" ${edge.bridge === "none" ? "selected" : ""}>none（严格报错）</option>
             </select>
           </div>
+          <div class="form-row">
+            <label>梯度控制</label>
+            <div class="edge-grad-box">
+              <label class="edge-grad-row">
+                <input type="checkbox" id="edgeStopGradChk" ${edge.stop_grad ? "checked" : ""} />
+                <span><b>梯度阻断</b> <span class="en-name">stop_grad</span></span>
+              </label>
+              <div class="hint-text">切断该边的反向传播：下游（如正则/探针 Loss）的梯度不再回传到上游主干，适合「特征干预 / 无侵入表征评估」。连线以虚线 ⊘ 标出。</div>
+              <label class="edge-grad-row">
+                <input type="checkbox" id="edgeWatchGradChk" ${edge.watch_grad ? "checked" : ""} />
+                <span><b>梯度观测</b> <span class="en-name">watch_grad</span></span>
+              </label>
+              <div class="hint-text">在该边注册反向 Hook，连线上实时显示梯度的 L2 范数 ∇（训练步结束后刷新）。</div>
+              <div class="edge-grad-live" id="edgeGradLive">${edgeGradLiveHtml(edge)}</div>
+            </div>
+          </div>
           <button id="delSelectedBtn" class="danger" style="width:100%;margin-top:4px">删除此连线 (Del)</button>
         </div>
       `;
       $("edgeBridgeSel").addEventListener("change", (ev) => {
         pushUndo();
         edge.bridge = ev.target.value;
+        runLiveErc();
+      });
+      $("edgeStopGradChk").addEventListener("change", (ev) => {
+        pushUndo();
+        edge.stop_grad = ev.target.checked;
+        runLiveErc();
+      });
+      $("edgeWatchGradChk").addEventListener("change", (ev) => {
+        pushUndo();
+        edge.watch_grad = ev.target.checked;
+        if (!ev.target.checked && state.gradStats) delete state.gradStats[edge.id];
         runLiveErc();
       });
       $("delSelectedBtn").addEventListener("click", deleteSelected);
@@ -2113,6 +2199,68 @@ function drawHeatmapCanvas(canvas, heatmap) {
   ctx.textAlign = "right";
   ctx.fillText(vmax.toFixed(2), W - 6, plotH + 9);
   canvas._heatMeta = { rows, cols, data, vmin, vmax, plotH };
+}
+
+// 反向梯度视图：上半部分梯度分布热力图，下半部分梯度范数历史曲线
+function drawGradCanvas(canvas, grad) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  canvas._heatMeta = null;
+
+  const heat = grad.heatmap;
+  const histLen = grad.norm_history || [];
+  const curveH = Math.max(38, Math.round(H * 0.36));
+  const heatH = Math.max(20, H - curveH - 16);
+
+  if (heat) {
+    const off = document.createElement("canvas");
+    off.width = heat.cols;
+    off.height = heat.rows;
+    const octx = off.getContext("2d");
+    const img = octx.createImageData(heat.cols, heat.rows);
+    for (let i = 0; i < heat.data.length; i++) {
+      const [r, g, b] = sampleColormap("coolwarm", heat.data[i]);
+      const p = i * 4;
+      img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b; img.data[p + 3] = 255;
+    }
+    octx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, 0, 0, W, heatH);
+    canvas._heatMeta = { rows: heat.rows, cols: heat.cols, data: heat.data, vmin: heat.vmin, vmax: heat.vmax, plotH: heatH };
+  }
+
+  // 梯度范数曲线
+  const mL = 8, mR = 8, mT = heatH + 6, mB = 12;
+  const pw = W - mL - mR, ph = Math.max(10, H - mT - mB);
+  const vals = histLen.length ? histLen : [0];
+  let minY = Math.min(...vals), maxY = Math.max(...vals);
+  if (minY === maxY) { minY = Math.max(0, minY - 0.5); maxY += 0.5; }
+  const mapX = (i) => vals.length === 1 ? mL + pw / 2 : mL + (i / (vals.length - 1)) * pw;
+  const mapY = (v) => mT + ph - ((v - minY) / Math.max(1e-8, maxY - minY)) * ph;
+
+  ctx.strokeStyle = "#1e293b";
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(mL, mT + ph); ctx.lineTo(W - mR, mT + ph); ctx.stroke();
+
+  ctx.strokeStyle = "#22d3ee";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  vals.forEach((v, i) => {
+    const x = mapX(i), y = mapY(v);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = "#e2e8f0";
+  ctx.font = "bold 12px ui-monospace, monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(`∇n=${Number(grad.stats.norm).toFixed(3)}`, 8, heatH - 16);
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "9px ui-monospace, monospace";
+  ctx.textAlign = "right";
+  ctx.fillText(`σ=${Number(grad.stats.std).toFixed(3)}`, W - 8, heatH - 15);
 }
 
 function drawScalarCanvas(canvas, probe, histObj) {
@@ -2531,6 +2679,7 @@ function renderProbeIntoTarget(canvas, rawWrap, probe, histObj, forcedView) {
   if (view === "gate_dynamics" && !probe.gate_dynamics) view = probe.view;
   if (view === "trajectory" && !probe.trajectory) view = probe.view;
   if (view === "step_energy" && !probe.step_energy) view = probe.view;
+  if (view === "grad" && !probe.grad) view = probe.view;
 
   if (view === "raw") {
     canvas.style.display = "none";
@@ -2539,7 +2688,8 @@ function renderProbeIntoTarget(canvas, rawWrap, probe, histObj, forcedView) {
   } else {
     canvas.style.display = "block";
     rawWrap.style.display = "none";
-    if (view === "gate_dynamics") drawGateDynamicsCanvas(canvas, probe);
+    if (view === "grad") drawGradCanvas(canvas, probe.grad);
+    else if (view === "gate_dynamics") drawGateDynamicsCanvas(canvas, probe);
     else if (view === "trajectory") drawTrajectoryCanvas(canvas, probe);
     else if (view === "step_energy") drawStepEnergyCanvas(canvas, probe);
     else if (view === "scalar") drawScalarCanvas(canvas, probe, histObj);
@@ -2560,7 +2710,11 @@ function renderProbeIntoCard(card, nid, probe) {
   if (tag) tag.textContent = probe.view;
   if (shapeTxt) shapeTxt.textContent = `(${probe.shape.join(",")}) ${probe.dtype}`;
   if (meta && probe.stats) {
-    meta.innerHTML = `<span>min ${probe.stats.min.toFixed(2)}</span><span>max ${probe.stats.max.toFixed(2)}</span><span>μ ${probe.stats.mean.toFixed(2)}</span>`;
+    let html = `<span>min ${probe.stats.min.toFixed(2)}</span><span>max ${probe.stats.max.toFixed(2)}</span><span>μ ${probe.stats.mean.toFixed(2)}</span>`;
+    if (probe.grad) {
+      html += `<span style="color:#22d3ee">∇ ${Number(probe.grad.stats.norm).toFixed(2)}</span>`;
+    }
+    meta.innerHTML = html;
   }
   renderProbeIntoTarget(canvas, rawWrap, probe, state.probeHistory[nid], "auto");
 }
@@ -2636,13 +2790,15 @@ function refreshProbeModal() {
     if (v === "gate_dynamics") b.style.display = probe.gate_dynamics ? "" : "none";
     else if (v === "trajectory") b.style.display = probe.trajectory ? "" : "none";
     else if (v === "step_energy") b.style.display = probe.step_energy ? "" : "none";
+    else if (v === "grad") b.style.display = probe.grad ? "" : "none";
     else if (v === "heatmap" || v === "scalar" || v === "image" || v === "raw" || v === "hist") {
       b.style.display = (probe.heatmap || probe.raw || probe.hist) ? "" : "none";
     }
   });
   $("probeModalShape").textContent = `shape=(${probe.shape.join(",")}) · ${probe.dtype} · layout=${probe.layout}`;
   const st = probe.stats;
-  $("probeModalStats").textContent = `min=${st.min}  max=${st.max}  mean=${st.mean}  std=${st.std}  norm=${st.norm}`;
+  const gtxt = probe.grad ? `  ∇norm=${probe.grad.stats.norm}  ∇std=${probe.grad.stats.std}` : "";
+  $("probeModalStats").textContent = `min=${st.min}  max=${st.max}  mean=${st.mean}  std=${st.std}  norm=${st.norm}${gtxt}`;
   renderProbeIntoTarget(
     $("probeModalCanvas"),
     $("probeModalRaw"),
@@ -2979,6 +3135,7 @@ function connectWS() {
     if (msg.type === "train_started") {
       state.history = []; state.lossSeries = {};
       state.probeHistory = {}; state.latestProbes = {};
+      state.gradStats = {};
       $("kpiVal").textContent = "-";
       setTrainButtons(true, false);
     } else if (msg.type === "step") {
@@ -2990,7 +3147,14 @@ function connectWS() {
       if (state.history.length > 200) state.history.shift();
       for (const k of Object.keys(msg.loss_dict || {})) state.lossSeries[k] = true;
       renderLossChart();
+      state.gradStats = msg.grad_stats || {};
       updateNodeLiveStats(msg.node_stats, msg.tap_stats);
+      refreshEdgeGradLabels();
+      if (state.selectedEdgeId) {
+        const gl = $("edgeGradLive");
+        const selEdge = state.draftGraph?.edges?.find((e) => e.id === state.selectedEdgeId);
+        if (gl && selEdge) gl.innerHTML = edgeGradLiveHtml(selEdge);
+      }
       updateProbes(msg.probes);
     } else if (msg.type === "eval") {
       const accStr = msg.val_acc !== null ? `${(msg.val_acc * 100).toFixed(1)}%` : "-";

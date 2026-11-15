@@ -64,6 +64,10 @@ class CompiledGraph(nn.Module):
             lc.node_id: lc for lc in graph_ir.losses
         }
 
+        # 梯度观测边：前向时为流过该边的张量注册反向 Hook，结果写入 grad_bus（key=边 id）
+        self._watch_edge_ids: set[str] = {e.id for e in graph_ir.edges if e.watch_grad}
+        self.grad_bus: dict[str, torch.Tensor] = {}
+
         # 持久化注册前向 Hook（用于非 forward_with_taps 模块的隐层抽头）
         self._hook_buffer: dict[str, dict[str, Signal]] = defaultdict(dict)
         self._hook_handles = []
@@ -85,6 +89,14 @@ class CompiledGraph(nn.Module):
                     submod.register_forward_hook(_make_hook(nid, tap_name, layout))
                 )
 
+    def _make_grad_hook(self, edge_id: str):
+        """构造写入 grad_bus 的反向 Hook（backward 时触发，detach 后保存副本）。"""
+
+        def _hook(grad: torch.Tensor) -> None:
+            self.grad_bus[edge_id] = grad.detach()
+
+        return _hook
+
     def forward(
         self,
         batch: Optional[dict[str, dict[str, Signal]]] = None,
@@ -98,6 +110,7 @@ class CompiledGraph(nn.Module):
         outputs: dict[str, dict[str, Signal]] = {}
         tap_bus: dict[str, Signal] = {}
         loss_dict: dict[str, torch.Tensor] = {}
+        self.grad_bus.clear()
 
         for nid in self.erc_result.topo_order:
             cat = self.categories[nid]
@@ -130,6 +143,12 @@ class CompiledGraph(nn.Module):
 
                 if edge.id in self.bridges_mod:
                     sig = self.bridges_mod[edge.id](sig)
+
+                if edge.id in self._watch_edge_ids and sig.data.requires_grad:
+                    sig.data.register_hook(self._make_grad_hook(edge.id))
+
+                if edge.stop_grad:
+                    sig = sig.detached()
 
                 node_inputs[edge.dst_port] = sig
 
@@ -175,6 +194,7 @@ class CompiledGraph(nn.Module):
             tap_bus=tap_bus,
             loss_dict=loss_dict,
             total_loss=total_loss,
+            grad_bus=self.grad_bus,
         )
 
 

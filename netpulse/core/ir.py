@@ -27,6 +27,10 @@ class EdgeIR(BaseModel):
     dst_port: str
     edge_kind: Literal["signal", "tap", "loss"] = "signal"
     bridge: Literal["auto", "none"] = "none"
+    # 梯度阻断：该边传递的信号 detach，反向传播不穿过此边（特征干预 / 无侵入表征评估）
+    stop_grad: bool = False
+    # 梯度观测：编译期在该边注册反向 Hook，梯度张量写入 CompiledGraph.grad_bus
+    watch_grad: bool = False
 
 
 class LossConfig(BaseModel):

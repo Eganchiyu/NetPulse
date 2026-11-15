@@ -177,6 +177,11 @@ class LiveTrainRunner:
                         for tkey, tsig in out.tap_bus.items():
                             tap_stats[tkey] = _tensor_summary(tsig.data)
 
+                        # 反向梯度总线（backward 已执行，Hook 已回填）
+                        grad_stats: dict[str, Any] = {
+                            eid: _tensor_summary(gt) for eid, gt in out.grad_bus.items()
+                        }
+
                         probes: dict[str, Any] = {}
                         for nid, cat in compiled.categories.items():
                             if cat == "output":
@@ -202,6 +207,7 @@ class LiveTrainRunner:
                             "batch_acc": batch_acc,
                             "node_stats": node_stats,
                             "tap_stats": tap_stats,
+                            "grad_stats": grad_stats,
                             "probes": probes,
                             "step_delay_ms": self.step_delay_ms,
                         })

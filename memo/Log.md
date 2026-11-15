@@ -76,3 +76,13 @@
 - 文字视觉：统一中文标签（`.zh-name/.en-name/.hint-text/.pf-*`），元件库/节点卡/表格字号与行高重排，节点卡简介两行截断。
 - 验证：`pytest tests -q` 22/22 通过；jsdom 冒烟测试（元件库、节点渲染、LSTM 抽头、改名、快速参数、校验与重置、连线检查器）无 JS 报错。
 - 文档同步：`README.md` 更新元件库为 30 个（按 source/backbone/op/bridge/loss/output 分类）、补充序列数据源与可视化探针、新增「元件自带中文元数据」与「中文优先可视排版」章节、WebUI 常用操作加入 ✎ 改名 / ⚙ 快速参数 / 参数重置与校验 / 模板库、目录结构补 `templates/`、serve 参数补 `--templates-dir`。
+
+## 2026-11-16（梯度控制：边级 stop_grad 与反向梯度 grad_bus 观测）
+- IR 层：`EdgeIR` 新增 `stop_grad`（梯度阻断）与 `watch_grad`（梯度观测）两个布尔属性；`Signal.detached()` 统一负责「保留 mask/layout 的切断反传」；`GraphOutput` 新增 `grad_bus`。
+- 编译器（`core/compiler.py`）：边组装时先过 AutoBridge，再按 `watch_grad` 注册 `Tensor.register_hook` 把梯度写入 `CompiledGraph.grad_bus[edge_id]`（每次 forward 开头清空，`GraphOutput.grad_bus` 共享同一字典），最后按 `stop_grad` 交给下游 `sig.detached()`。
+- 探针（`components/outputs.py`）：`_OutputProbeModule` 新增 `watch_grad`；`monitor` / `scalar_watch` / `heatmap_preview` / `tensor_peek` 各暴露该参数，快照新增 `grad` 段（梯度统计 / 对称热力图 / 范数历史曲线）。
+- ERC（`core/erc.py`）：新增 `STOP_GRAD_ON_LOSS_EDGE`（阻断梯度却接进 Loss 节点，警告）与 `LOSS_GRAD_BLOCKED`（全图所有可反传 Loss 输入均被阻断，错误，否则 backward 必崩）。
+- WebUI（`webui/server.py`、`runner.py`、`index.html`）：ERC 载荷与训练 step 消息分别透传 `stop_grad/watch_grad` 与 `grad_stats`；连线检查器新增「梯度控制」两个复选框与实时 ∇ 读数；`stop_grad` 连线渲染为虚线并加 ⊘ 前缀，`watch_grad` 连线标签实时显示 ∇ L2；探针卡片 meta 增加 ∇ 读数，放大弹窗新增「梯度」视图（梯度热力图 + 范数曲线）。
+- 测试：新增 `tests/test_grad_control.py`（6 项），含「阻断后主干梯度与无正则节点完全一致」的解耦验证与探针梯度快照验证；`pytest tests -q` 26 passed（`test_atomic_layers::test_mnist_atomic_e2e` 与 `test_lstm_and_probes::test_lstm_forecast_classic_and_templates_erc` 的既有 flaky 失败与本次改动无关，已在 baseline 复现）。
+- jsdom 冒烟：连线复选框开→草稿边字段更新→虚线 ⊘ 标签→写入 gradStats 后标签显示 ∇2.35→探针 meta/弹窗梯度视图，无 JS 报错。
+- 文档：`README.md` 新增「梯度控制」特性段；`docs/ARCHITECTURE.md` 新增 §3.2.1 梯度控制与梯度总线，并更新 WebUI 数据流的 `grad_stats` 说明。

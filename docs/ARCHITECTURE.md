@@ -109,9 +109,16 @@ netpulse/
 1. 按 `topo_order` 顺序执行：
    - `category == "source"`：从 `batch[nid]` 读取 `{x: Signal, y: Signal}` 输出（Meta 推导期或空输入时生成虚拟符号张量）。
    - 其他节点：从上游 `outputs` 或 `tap_bus` 取出对应 `Signal`，若该边存在 `AutoBridge` 则先经过 `bridges_mod[edge.id]` 投影，组装 `node_inputs: dict[str, Signal]` 传入节点执行。
+   - 梯度控制（见 §3.2.1）：边带 `watch_grad` 时对过边张量注册反向 Hook 写入 `grad_bus`；边带 `stop_grad` 时把 `Signal.detached()` 交给下游。
    - 节点若有被引用 Tap，写入 `tap_bus[f"{nid}.{tap_name}"]`。
    - `category == "loss"`：在 `compute_losses=True`（默认 `mode == "train"`）时执行并写入 `loss_dict[nid]`；`mode in ("eval", "infer")` 默认跳过。
 2. `total_loss` 根据 `GraphIR.losses` 中的 `weight` 与 `enabled` 汇总，供原生 `total_loss.backward()` 反传。
+
+#### 3.2.1 梯度控制与梯度总线
+
+- **`EdgeIR.stop_grad`**：边组装完成后执行 `sig.detached()`，下游分支（诊断探针、表征评估 Loss、特征干预）的计算图在此截断，梯度不再回传上游主干；前向数值不受影响。ERC 对「阻断梯度却接进 Loss 节点」给出 `STOP_GRAD_ON_LOSS_EDGE` 警告，对「全图所有可反传 Loss 输入均被阻断」给出 `LOSS_GRAD_BLOCKED` 错误（否则 `backward()` 必然报错）。
+- **`EdgeIR.watch_grad`**：前向时对过边张量 `Tensor.register_hook(...)`，`backward` 期间把 `grad.detach()` 写入 `CompiledGraph.grad_bus[edge_id]`（每次 `forward` 开头清空，`GraphOutput.grad_bus` 持有同一字典引用，故 `backward()` 后即可读取）。`LiveTrainRunner` 将每条观测边的梯度 `mean/std/norm` 作为 `grad_stats` 随 `step` 消息推送，前端在连线上显示 ∇ L2 范数。
+- **探针侧梯度观测**：`_OutputProbeModule(watch_grad=True)`（`monitor` / `scalar_watch` / `heatmap_preview` / `tensor_peek` 的 `watch_grad` 参数）在自身输入张量上注册 Hook，快照中附 `grad` 段（梯度统计、梯度分布热力图、梯度范数历史曲线），与 `tap_bus` 的可视化链路完全复用。注意 Hook 只在张量仍属反传路径时触发：若该端口的输出不参与任何 Loss，梯度为空属正常。
 
 ### 3.3 外挂交互式 WebUI 数据流（`netpulse/webui/`）
 
@@ -121,7 +128,7 @@ netpulse/
   - `POST /api/graph/save` 经文件名安全校验后将 `GraphIR` 写回 `graphs_dir`；所有本地环回请求均受 `_create_origin_only_middleware()` 跨站校验保护。
 - **实时训练与调速**：
   - `POST /api/train/start` 支持读取磁盘文件或直接接收画布当前的内存 `graph` JSON 启动 `LiveTrainRunner` 后台线程。
-  - 每步前向/反传后提取各节点输出及 Tap 的 `shape`、`mean`、`std`、`norm`，经线程安全 `asyncio.Queue` 投递至 `_broadcaster` 任务推送到 `/ws`。
+  - 每步前向/反传后提取各节点输出、Tap 与梯度观测边的 `shape`、`mean`、`std`、`norm`（`node_stats` / `tap_stats` / `grad_stats`），经线程安全 `asyncio.Queue` 投递至 `_broadcaster` 任务推送到 `/ws`。
   - `POST /api/train/speed` 在训练途中实时修改 `runner.step_delay_ms`（0~3000ms）与 `paused` 状态，实现“全速训练”与“慢放观察张量流动”自由切换。
 
 ---

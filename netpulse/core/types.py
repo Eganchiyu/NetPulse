@@ -69,6 +69,11 @@ class Signal:
             meta=new_meta,
         )
 
+    def detached(self) -> "Signal":
+        """切断反向传播：数据 detach，同时保留 shape / layout / mask 语义。"""
+        mask = self.mask.detach() if self.mask is not None else None
+        return Signal(data=self.data.detach(), mask=mask, meta=dict(self.meta))
+
 
 @dataclass(frozen=True)
 class PortSpec:
@@ -146,3 +151,5 @@ class GraphOutput:
     tap_bus: dict[str, Signal]
     loss_dict: dict[str, torch.Tensor]
     total_loss: Optional[torch.Tensor] = None
+    # 反向梯度总线：key 为边 id，由 backward 期间触发的 Hook 填充（前向刚返回时为空）
+    grad_bus: dict[str, torch.Tensor] = field(default_factory=dict)

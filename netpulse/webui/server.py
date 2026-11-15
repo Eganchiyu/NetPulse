@@ -171,6 +171,8 @@ def serialize_graph_ir(
             "dst_port": edge.dst_port,
             "edge_kind": edge.edge_kind,
             "bridge": edge.bridge,
+            "stop_grad": edge.stop_grad,
+            "watch_grad": edge.watch_grad,
             "shape": shape_info,
             "autobridge": (
                 {

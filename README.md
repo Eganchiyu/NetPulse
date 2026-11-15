@@ -13,6 +13,11 @@
 - **隐层抽头（Tap）与多目标正则化**：
   - 通过约定返回（`forward_with_taps`）或 PyTorch `register_forward_hook` 无侵入抽取任意隐藏层输出至 `tap_bus`。
   - Loss 与正则项节点（如 `cross_entropy_loss`、`activation_reg_loss` 的 `l1`/`l2`/`orthogonal` 模式）与网络层平级连线，统一加权反传。
+- **梯度控制（边级 `stop_grad` / `watch_grad`）**：
+  - `EdgeIR.stop_grad`：切断该边的反向传播（信号 `detach`），把「特征干预 / 无侵入表征评估」与「训练干扰」解耦——例如挂在隐层上的线性探针或诊断性正则不再污染主干梯度。WebUI 连线以虚线 ⊘ 标出，检查器一键开关。
+  - `EdgeIR.watch_grad`：编译期在该边注册 `Tensor.register_hook`，`backward` 时把梯度张量写入 `CompiledGraph.grad_bus`（`GraphOutput.grad_bus`），连线上实时显示 ∇ L2 范数，用于观测梯度消失/爆炸与多 Loss 分支的梯度冲突。
+  - 探针元件（`monitor` / `scalar_watch` / `heatmap_preview` / `tensor_peek`）支持 `watch_grad=true` 参数：除前向激活外，还给出该端口的反向梯度范数曲线与梯度分布热力图。
+  - ERC 会提示 `STOP_GRAD_ON_LOSS_EDGE`（Loss 分支失去梯度）与 `LOSS_GRAD_BLOCKED`（全图无任何可反传的 Loss 输入，训练必报错）。
 - **双粒度元件库（30 个内置元件）与统一初始化**：
   - **数据源 (`source`，4)**：`spiral_data`、`mnist_data`（纯 PyTorch 加载与缓存，无需 `torchvision`）、`seq_wave_data`（波形/记忆线索序列，变长 `mask`）、`seq_forecast_data`（滑窗时序回归，`sine_mix` / `damped_osc` / `ar_trend`）。
   - **主干与原子层 (`backbone`，5 / `op`，10)**：`conv2d`、`pool2d`、`linear`、`activation`、`batch_norm2d`、`layer_norm`、`dropout`（支持 `kaiming` / `xavier` / `orthogonal` / `normal` / `constant` 等权重与偏置初始化）、`cnn_block`、`mlp_block`、`lstm`（步进 `LSTMCell`，Mask 感知）。

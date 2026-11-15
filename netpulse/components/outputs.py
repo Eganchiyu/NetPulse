@@ -12,6 +12,15 @@ from netpulse.core.registry import register_component
 from netpulse.core.types import ComponentSignature, ParamSpec, PortSpec, ResolvedSpec, Signal
 
 
+# 通用探针共享的「反向梯度观测」参数
+_WATCH_GRAD_SPEC = ParamSpec(
+    "watch_grad",
+    "bool",
+    False,
+    description="同时观测该输入端口的反向梯度（梯度范数曲线与梯度分布热力图）",
+)
+
+
 def _safe_float(val: float) -> float:
     if val != val:  # NaN
         return 0.0
@@ -211,7 +220,7 @@ def _extract_images(
 
 
 class _OutputProbeModule(nn.Module):
-    """零梯度旁路输出探针模块基类。"""
+    """零梯度旁路输出探针模块基类（可选：watch_grad 时同时观测该端口的反向梯度）。"""
 
     def __init__(
         self,
@@ -228,6 +237,7 @@ class _OutputProbeModule(nn.Module):
         max_rows: int = 8,
         max_cols: int = 8,
         precision: int = 4,
+        watch_grad: bool = False,
     ) -> None:
         super().__init__()
         self.probe_kind = probe_kind
@@ -243,16 +253,56 @@ class _OutputProbeModule(nn.Module):
         self.max_rows = max_rows
         self.max_cols = max_cols
         self.precision = precision
+        self.watch_grad = watch_grad
 
         self._last_tensor: Optional[torch.Tensor] = None
         self._last_layout: str = "ANY"
+        self._last_grad: Optional[torch.Tensor] = None
+        self._grad_norm_history: list[float] = []
+
+    def _make_grad_hook(self):
+        """反向 Hook：捕获该输入张量的梯度（不参与前向，也不影响反传本身）。"""
+
+        def _hook(grad: torch.Tensor) -> None:
+            self._last_grad = grad.detach()
+            self._grad_norm_history.append(round(_safe_float(float(grad.float().norm().item())), 5))
+            if len(self._grad_norm_history) > max(20, self.history_len):
+                del self._grad_norm_history[: len(self._grad_norm_history) - max(20, self.history_len)]
+
+        return _hook
 
     def forward(self, inputs: dict[str, Signal]) -> dict[str, Signal]:
         sig = inputs["x"]
         if sig.data.device.type != "meta":
             self._last_tensor = sig.data.detach()
             self._last_layout = sig.layout
+            if self.watch_grad and sig.data.requires_grad:
+                # 挂在该张量本体上，backward 时把梯度回填给本探针
+                sig.data.register_hook(self._make_grad_hook())
         return {}
+
+    def _grad_snapshot(self) -> Optional[dict[str, Any]]:
+        if self._last_grad is None:
+            return None
+        with torch.no_grad():
+            raw = self._last_grad.cpu()
+            tf = raw.float()
+            stats = _tensor_basic_stats(tf)
+            mat = _to_2d_matrix(tf, "ANY", sample_idx=self.sample_idx, channel=self.channel)
+            heat = _quantize_2d(_downsample_2d(mat, self.max_size), symmetric=True)
+            heat["colormap"] = "coolwarm"
+            heat["symmetric"] = True
+            heat["orig_shape"] = [int(mat.shape[0]), int(mat.shape[1])]
+            return {
+                "shape": list(raw.shape),
+                "stats": stats,
+                "scalar": _reduce_scalar(tf, self.reduce_mode),
+                "reduce": self.reduce_mode,
+                "heatmap": heat,
+                "hist": _extract_histogram(tf),
+                "norm_history": list(self._grad_norm_history),
+                "history_len": max(20, self.history_len),
+            }
 
     def capture_snapshot(self) -> Optional[dict[str, Any]]:
         if self._last_tensor is None:
@@ -327,6 +377,7 @@ class _OutputProbeModule(nn.Module):
                 "images": images,
                 "raw": raw_slice,
                 "hist": hist,
+                "grad": self._grad_snapshot(),
             }
 
 
@@ -367,6 +418,7 @@ class Monitor(BaseComponent):
                 options=["mean", "norm", "max", "min", "std"],
                 description="多维张量转标量的聚合方式",
             ),
+            _WATCH_GRAD_SPEC,
         ]
 
     @classmethod
@@ -388,6 +440,7 @@ class Monitor(BaseComponent):
             sample_idx=int(params.get("sample_idx", 0)),
             symmetric=bool(params.get("symmetric", False)),
             reduce_mode=str(params.get("reduce", "mean")),
+            watch_grad=bool(params.get("watch_grad", False)),
         )
 
 
@@ -412,6 +465,7 @@ class ScalarWatch(BaseComponent):
             ),
             ParamSpec("ema_alpha", "float", 0.1, min=0.0, max=0.99, step=0.05, description="EMA 平滑系数（0 关闭）"),
             ParamSpec("history_len", "int", 120, min=20, max=300, step=10, description="曲线保留步数"),
+            _WATCH_GRAD_SPEC,
         ]
 
     @classmethod
@@ -430,6 +484,7 @@ class ScalarWatch(BaseComponent):
             reduce_mode=str(params.get("reduce", "mean")),
             ema_alpha=float(params.get("ema_alpha", 0.1)),
             history_len=int(params.get("history_len", 120)),
+            watch_grad=bool(params.get("watch_grad", False)),
         )
 
 
@@ -456,6 +511,7 @@ class HeatmapPreview(BaseComponent):
             ParamSpec("channel", "int", 0, min=-1, max=512, step=1, description="4D 通道索引（-1 为通道均值）"),
             ParamSpec("sample_idx", "int", 0, min=0, max=256, step=1, description="3D/4D 样本索引"),
             ParamSpec("symmetric", "bool", False, description="是否以 0 为中心对称映射"),
+            _WATCH_GRAD_SPEC,
         ]
 
     @classmethod
@@ -476,6 +532,7 @@ class HeatmapPreview(BaseComponent):
             channel=int(params.get("channel", 0)),
             sample_idx=int(params.get("sample_idx", 0)),
             symmetric=bool(params.get("symmetric", False)),
+            watch_grad=bool(params.get("watch_grad", False)),
         )
 
 
@@ -502,6 +559,7 @@ class TensorPeek(BaseComponent):
             ParamSpec("max_rows", "int", 8, min=1, max=16, step=1, description="原始矩阵最大显示行数"),
             ParamSpec("max_cols", "int", 8, min=1, max=16, step=1, description="原始矩阵最大显示列数"),
             ParamSpec("precision", "int", 4, min=1, max=6, step=1, description="浮点显示小数位数"),
+            _WATCH_GRAD_SPEC,
         ]
 
     @classmethod
@@ -522,6 +580,7 @@ class TensorPeek(BaseComponent):
             max_rows=int(params.get("max_rows", 8)),
             max_cols=int(params.get("max_cols", 8)),
             precision=int(params.get("precision", 4)),
+            watch_grad=bool(params.get("watch_grad", False)),
         )
 
 
