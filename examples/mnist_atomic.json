@@ -10,9 +10,10 @@
         "subset_val": 512
       },
       "position": {
-        "x": 60.0,
-        "y": 290.0
-      }
+        "x": 36.0,
+        "y": 340.0
+      },
+      "label": null
     },
     {
       "id": "conv1",
@@ -27,9 +28,10 @@
         "bias_init": "zeros"
       },
       "position": {
-        "x": 335.0,
-        "y": 583.0
-      }
+        "x": 314.0,
+        "y": 100.0
+      },
+      "label": null
     },
     {
       "id": "act1",
@@ -40,7 +42,8 @@
       "position": {
         "x": 600.0,
         "y": 290.0
-      }
+      },
+      "label": null
     },
     {
       "id": "pool1",
@@ -53,7 +56,8 @@
       "position": {
         "x": 870.0,
         "y": 290.0
-      }
+      },
+      "label": null
     },
     {
       "id": "conv2",
@@ -68,7 +72,8 @@
       "position": {
         "x": 1136.0,
         "y": 41.0
-      }
+      },
+      "label": null
     },
     {
       "id": "bn2",
@@ -77,7 +82,8 @@
       "position": {
         "x": 1410.0,
         "y": 290.0
-      }
+      },
+      "label": null
     },
     {
       "id": "act2",
@@ -88,7 +94,8 @@
       "position": {
         "x": 1680.0,
         "y": 290.0
-      }
+      },
+      "label": null
     },
     {
       "id": "pool2",
@@ -101,7 +108,8 @@
       "position": {
         "x": 1952.0,
         "y": 518.0
-      }
+      },
+      "label": null
     },
     {
       "id": "flat",
@@ -110,7 +118,8 @@
       "position": {
         "x": 2219.0,
         "y": 148.0
-      }
+      },
+      "label": null
     },
     {
       "id": "fc1",
@@ -121,9 +130,10 @@
         "bias_init": "zeros"
       },
       "position": {
-        "x": 2490.0,
-        "y": 290.0
-      }
+        "x": 2525.0,
+        "y": 140.0
+      },
+      "label": null
     },
     {
       "id": "act_fc1",
@@ -134,39 +144,43 @@
       "position": {
         "x": 2760.0,
         "y": 290.0
-      }
+      },
+      "label": null
     },
     {
       "id": "drop",
       "type": "dropout",
       "params": {
-        "p": 0.1
+        "p": 0.05
       },
       "position": {
         "x": 3030.0,
         "y": 212.5
-      }
+      },
+      "label": null
     },
     {
       "id": "classifier",
       "type": "linear",
       "params": {
         "out_features": 10,
-        "init": "xavier_normal"
+        "init": "kaiming_uniform"
       },
       "position": {
         "x": 3448.0,
         "y": 172.0
-      }
+      },
+      "label": null
     },
     {
       "id": "ce",
       "type": "cross_entropy_loss",
       "params": {},
       "position": {
-        "x": 3782.0,
-        "y": 325.0
-      }
+        "x": 3814.0,
+        "y": 336.0
+      },
+      "label": null
     },
     {
       "id": "fc_ortho_reg",
@@ -177,7 +191,8 @@
       "position": {
         "x": 3040.0,
         "y": 611.0
-      }
+      },
+      "label": null
     },
     {
       "id": "heatmap_preview",
@@ -192,7 +207,8 @@
       "position": {
         "x": 3102.0,
         "y": -273.0
-      }
+      },
+      "label": null
     },
     {
       "id": "scalar_watch",
@@ -205,7 +221,8 @@
       "position": {
         "x": 3483.0,
         "y": 542.0
-      }
+      },
+      "label": null
     },
     {
       "id": "scalar_watch_1",
@@ -218,7 +235,8 @@
       "position": {
         "x": 4205.0,
         "y": 177.0
-      }
+      },
+      "label": null
     },
     {
       "id": "tensor_peek",
@@ -233,7 +251,8 @@
       "position": {
         "x": 4225.0,
         "y": 642.0
-      }
+      },
+      "label": null
     },
     {
       "id": "monitor",
@@ -250,7 +269,8 @@
       "position": {
         "x": 3458.0,
         "y": -272.0
-      }
+      },
+      "label": null
     },
     {
       "id": "tensor_peek_1",
@@ -265,7 +285,8 @@
       "position": {
         "x": 4164.0,
         "y": -378.0
-      }
+      },
+      "label": null
     },
     {
       "id": "monitor_1",
@@ -282,7 +303,8 @@
       "position": {
         "x": 2306.0,
         "y": 662.0
-      }
+      },
+      "label": null
     },
     {
       "id": "monitor_2",
@@ -299,7 +321,42 @@
       "position": {
         "x": 2682.0,
         "y": 669.0
-      }
+      },
+      "label": null
+    },
+    {
+      "id": "monitor_3",
+      "type": "monitor",
+      "params": {
+        "mode": "auto",
+        "colormap": "viridis",
+        "max_size": 64,
+        "channel": 0,
+        "sample_idx": 0,
+        "symmetric": false,
+        "reduce": "mean"
+      },
+      "position": {
+        "x": 1926.0,
+        "y": 761.0
+      },
+      "label": null
+    },
+    {
+      "id": "heatmap_preview_1",
+      "type": "heatmap_preview",
+      "params": {
+        "colormap": "viridis",
+        "max_size": 64,
+        "channel": 0,
+        "sample_idx": 0,
+        "symmetric": false
+      },
+      "position": {
+        "x": 3169.0,
+        "y": 946.0
+      },
+      "label": null
     }
   ],
   "edges": [
@@ -509,6 +566,24 @@
       "dst_port": "x",
       "edge_kind": "signal",
       "bridge": "auto"
+    },
+    {
+      "id": "e24",
+      "src_node": "act2",
+      "src_port": "out",
+      "dst_node": "monitor_3",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "auto"
+    },
+    {
+      "id": "e25",
+      "src_node": "fc1",
+      "src_port": "out",
+      "dst_node": "heatmap_preview_1",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "auto"
     }
   ],
   "losses": [
@@ -525,7 +600,7 @@
   ],
   "trainer": {
     "optimizer": "adam",
-    "lr": 0.002,
+    "lr": 0.0005,
     "weight_decay": 0.0,
     "batch_size": 32,
     "epochs": 50,

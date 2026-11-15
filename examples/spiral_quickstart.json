@@ -4,39 +4,114 @@
     {
       "id": "src",
       "type": "spiral_data",
-      "params": { "num_classes": 3, "points_per_class": 150, "noise": 0.12 }
+      "params": {
+        "num_classes": 3,
+        "points_per_class": 150,
+        "noise": 0.12
+      },
+      "position": {
+        "x": -137.0,
+        "y": 278.0
+      }
     },
     {
       "id": "mlp",
       "type": "mlp_block",
-      "params": { "dims": [32, 32, 3], "activation": "relu" }
+      "params": {
+        "dims": [
+          32,
+          32,
+          3
+        ],
+        "activation": "relu"
+      },
+      "position": {
+        "x": 167.0,
+        "y": -98.0
+      }
     },
     {
       "id": "ce",
       "type": "cross_entropy_loss",
-      "params": {}
+      "params": {},
+      "position": {
+        "x": 966.0,
+        "y": 215.0
+      }
     },
     {
       "id": "reg",
       "type": "activation_reg_loss",
-      "params": { "mode": "l2" }
+      "params": {
+        "mode": "l2"
+      },
+      "position": {
+        "x": 439.0,
+        "y": 174.0
+      }
     }
   ],
   "edges": [
-    { "id": "e1", "src_node": "src", "src_port": "x", "dst_node": "mlp", "dst_port": "x" },
-    { "id": "e2", "src_node": "mlp", "src_port": "out", "dst_node": "ce", "dst_port": "logits" },
-    { "id": "e3", "src_node": "src", "src_port": "y", "dst_node": "ce", "dst_port": "target" },
-    { "id": "e4", "src_node": "mlp", "src_port": "layer_1", "dst_node": "reg", "dst_port": "x", "edge_kind": "tap" }
+    {
+      "id": "e1",
+      "src_node": "src",
+      "src_port": "x",
+      "dst_node": "mlp",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e2",
+      "src_node": "mlp",
+      "src_port": "out",
+      "dst_node": "ce",
+      "dst_port": "logits",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e3",
+      "src_node": "src",
+      "src_port": "y",
+      "dst_node": "ce",
+      "dst_port": "target",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e4",
+      "src_node": "mlp",
+      "src_port": "layer_1",
+      "dst_node": "reg",
+      "dst_port": "x",
+      "edge_kind": "tap",
+      "bridge": "none"
+    }
   ],
   "losses": [
-    { "node_id": "ce", "weight": 1.0 },
-    { "node_id": "reg", "weight": 0.01 }
+    {
+      "node_id": "ce",
+      "weight": 1.0,
+      "enabled": true
+    },
+    {
+      "node_id": "reg",
+      "weight": 0.01,
+      "enabled": true
+    }
   ],
   "trainer": {
     "optimizer": "adam",
     "lr": 0.02,
+    "weight_decay": 0.0,
     "batch_size": 64,
     "epochs": 25,
-    "eval_every_steps": 50
+    "max_steps": null,
+    "grad_clip": 1.0,
+    "device": "cpu",
+    "seed": 42,
+    "eval_every_steps": 50,
+    "infer_outputs": []
   }
 }

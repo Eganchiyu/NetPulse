@@ -12,6 +12,10 @@
         "num_samples": 600,
         "variable_length": true,
         "noise": 0.12
+      },
+      "position": {
+        "x": -154.0,
+        "y": 304.0
       }
     },
     {
@@ -20,8 +24,12 @@
       "params": {
         "hidden_size": 32,
         "num_layers": 1,
-        "forget_bias": 1.0,
+        "forget_bias": 1,
         "init": "orthogonal"
+      },
+      "position": {
+        "x": 330.0,
+        "y": 290.0
       }
     },
     {
@@ -29,20 +37,35 @@
       "type": "seq_pool",
       "params": {
         "mode": "last"
+      },
+      "position": {
+        "x": 685.0,
+        "y": 88.0
       }
     },
     {
       "id": "head",
       "type": "mlp_block",
       "params": {
-        "dims": [32, 3],
+        "dims": [
+          32,
+          3
+        ],
         "activation": "relu"
+      },
+      "position": {
+        "x": 1056.0,
+        "y": 97.0
       }
     },
     {
       "id": "ce",
       "type": "cross_entropy_loss",
-      "params": {}
+      "params": {},
+      "position": {
+        "x": 1535.0,
+        "y": 289.0
+      }
     },
     {
       "id": "probe_gates",
@@ -51,6 +74,10 @@
         "sample_idx": 0,
         "max_steps": 64,
         "saturation_thresh": 0.1
+      },
+      "position": {
+        "x": 1227.0,
+        "y": 538.0
       }
     },
     {
@@ -60,6 +87,10 @@
         "method": "pca",
         "sample_idx": 0,
         "max_points": 64
+      },
+      "position": {
+        "x": 1229.0,
+        "y": 980.0
       }
     },
     {
@@ -69,29 +100,132 @@
         "sample_idx": 0,
         "max_steps": 64,
         "norm_mode": "l2"
+      },
+      "position": {
+        "x": 668.0,
+        "y": 890.0
       }
     }
   ],
   "edges": [
-    { "id": "e_seq_in", "src_node": "seq_src", "src_port": "x", "dst_node": "lstm", "dst_port": "x" },
-    { "id": "e_pool", "src_node": "lstm", "src_port": "out", "dst_node": "pool", "dst_port": "x" },
-    { "id": "e_head", "src_node": "pool", "src_port": "out", "dst_node": "head", "dst_port": "x" },
-    { "id": "e_logits", "src_node": "head", "src_port": "out", "dst_node": "ce", "dst_port": "logits" },
-    { "id": "e_target", "src_node": "seq_src", "src_port": "y", "dst_node": "ce", "dst_port": "target" },
-    { "id": "e_tap_i", "src_node": "lstm", "src_port": "gate_i", "dst_node": "probe_gates", "dst_port": "i", "edge_kind": "tap" },
-    { "id": "e_tap_f", "src_node": "lstm", "src_port": "gate_f", "dst_node": "probe_gates", "dst_port": "f", "edge_kind": "tap" },
-    { "id": "e_tap_o", "src_node": "lstm", "src_port": "gate_o", "dst_node": "probe_gates", "dst_port": "o", "edge_kind": "tap" },
-    { "id": "e_tap_c", "src_node": "lstm", "src_port": "cell_state", "dst_node": "probe_gates", "dst_port": "c", "edge_kind": "tap" },
-    { "id": "e_tap_h", "src_node": "lstm", "src_port": "hidden_states", "dst_node": "probe_traj", "dst_port": "x", "edge_kind": "tap" },
-    { "id": "e_energy", "src_node": "lstm", "src_port": "out", "dst_node": "probe_energy", "dst_port": "x" }
+    {
+      "id": "e_seq_in",
+      "src_node": "seq_src",
+      "src_port": "x",
+      "dst_node": "lstm",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e_pool",
+      "src_node": "lstm",
+      "src_port": "out",
+      "dst_node": "pool",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e_head",
+      "src_node": "pool",
+      "src_port": "out",
+      "dst_node": "head",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e_logits",
+      "src_node": "head",
+      "src_port": "out",
+      "dst_node": "ce",
+      "dst_port": "logits",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e_target",
+      "src_node": "seq_src",
+      "src_port": "y",
+      "dst_node": "ce",
+      "dst_port": "target",
+      "edge_kind": "signal",
+      "bridge": "none"
+    },
+    {
+      "id": "e_tap_i",
+      "src_node": "lstm",
+      "src_port": "gate_i",
+      "dst_node": "probe_gates",
+      "dst_port": "i",
+      "edge_kind": "tap",
+      "bridge": "none"
+    },
+    {
+      "id": "e_tap_f",
+      "src_node": "lstm",
+      "src_port": "gate_f",
+      "dst_node": "probe_gates",
+      "dst_port": "f",
+      "edge_kind": "tap",
+      "bridge": "none"
+    },
+    {
+      "id": "e_tap_o",
+      "src_node": "lstm",
+      "src_port": "gate_o",
+      "dst_node": "probe_gates",
+      "dst_port": "o",
+      "edge_kind": "tap",
+      "bridge": "none"
+    },
+    {
+      "id": "e_tap_c",
+      "src_node": "lstm",
+      "src_port": "cell_state",
+      "dst_node": "probe_gates",
+      "dst_port": "c",
+      "edge_kind": "tap",
+      "bridge": "none"
+    },
+    {
+      "id": "e_tap_h",
+      "src_node": "lstm",
+      "src_port": "hidden_states",
+      "dst_node": "probe_traj",
+      "dst_port": "x",
+      "edge_kind": "tap",
+      "bridge": "none"
+    },
+    {
+      "id": "e_energy",
+      "src_node": "lstm",
+      "src_port": "out",
+      "dst_node": "probe_energy",
+      "dst_port": "x",
+      "edge_kind": "signal",
+      "bridge": "none"
+    }
   ],
   "losses": [
-    { "node_id": "ce", "weight": 1.0 }
+    {
+      "node_id": "ce",
+      "weight": 1.0,
+      "enabled": true
+    }
   ],
   "trainer": {
     "optimizer": "adam",
     "lr": 0.005,
+    "weight_decay": 0.0,
     "batch_size": 32,
-    "epochs": 8
+    "epochs": 8,
+    "max_steps": null,
+    "grad_clip": 1.0,
+    "device": "cpu",
+    "seed": 42,
+    "eval_every_steps": 50,
+    "infer_outputs": []
   }
 }
