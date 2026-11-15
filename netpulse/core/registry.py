@@ -50,20 +50,40 @@ class ComponentRegistry:
         return {
             "type_id": type_id,
             "display_name": cls.display_name or type_id,
+            "title": cls.title or cls.display_name or type_id,
             "category": cls.category,
             "description": cls.description or (cls.__doc__ or "").strip(),
             "params": [p.to_dict() for p in cls.param_schema()],
             "default_params": defaults,
             "inputs": [
-                {"name": p.name, "kind": p.kind, "layout": p.layout, "optional": p.optional}
+                {
+                    "name": p.name,
+                    "kind": p.kind,
+                    "layout": p.layout,
+                    "optional": p.optional,
+                    "title": p.title or p.name,
+                    "description": p.description,
+                }
                 for p in sig.inputs
             ],
             "outputs": [
-                {"name": p.name, "kind": p.kind, "layout": p.layout}
+                {
+                    "name": p.name,
+                    "kind": p.kind,
+                    "layout": p.layout,
+                    "title": p.title or p.name,
+                    "description": p.description,
+                }
                 for p in sig.outputs
             ],
             "taps": [
-                {"name": t.name, "source": t.source, "layout": t.spec.layout}
+                {
+                    "name": t.name,
+                    "source": t.source,
+                    "layout": t.spec.layout,
+                    "title": t.spec.title or t.name,
+                    "description": t.spec.description,
+                }
                 for t in sig.taps
             ],
         }

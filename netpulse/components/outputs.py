@@ -336,6 +336,7 @@ class Monitor(BaseComponent):
 
     category = "output"
     display_name = "Monitor"
+    title = "通用监视器"
     description = "通用数据监视器（自适应或切换 标量/热力图/图像/原始切片）"
 
     @classmethod
@@ -371,7 +372,9 @@ class Monitor(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="any", rank=None, layout="ANY")],
+            inputs=[
+                PortSpec(name="x", title="被观察数据", description="任意张量，按 mode 自动选择可视化方式", kind="any", rank=None, layout="ANY"),
+            ],
             outputs=[],
         )
 
@@ -394,6 +397,7 @@ class ScalarWatch(BaseComponent):
 
     category = "output"
     display_name = "ScalarWatch"
+    title = "标量曲线"
     description = "标量数值与历史折线图（适合 Loss 或任意端口聚合趋势）"
 
     @classmethod
@@ -413,7 +417,9 @@ class ScalarWatch(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="any", rank=None, layout="ANY")],
+            inputs=[
+                PortSpec(name="x", title="标量或张量", description="标量，或按 reduce 归约成标量的任意张量", kind="any", rank=None, layout="ANY"),
+            ],
             outputs=[],
         )
 
@@ -433,6 +439,7 @@ class HeatmapPreview(BaseComponent):
 
     category = "output"
     display_name = "HeatmapPreview"
+    title = "热力图预览"
     description = "2D 矩阵 / 激活输出 / 特征图热力图实时渲染"
 
     @classmethod
@@ -454,7 +461,9 @@ class HeatmapPreview(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="any", rank=None, layout="ANY")],
+            inputs=[
+                PortSpec(name="x", title="热力图数据", description="2D 矩阵、BCHW 特征图或可展平张量", kind="any", rank=None, layout="ANY"),
+            ],
             outputs=[],
         )
 
@@ -476,6 +485,7 @@ class TensorPeek(BaseComponent):
 
     category = "output"
     display_name = "TensorPeek"
+    title = "张量切片查看"
     description = "原始浮点数值切片、直方图与 4D 图像（如 MNIST）预览"
 
     @classmethod
@@ -497,7 +507,9 @@ class TensorPeek(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="any", rank=None, layout="ANY")],
+            inputs=[
+                PortSpec(name="x", title="待查看张量", description="任意张量，按行/列切片并绘制数值直方图", kind="any", rank=None, layout="ANY"),
+            ],
             outputs=[],
         )
 
@@ -656,6 +668,7 @@ class GateDynamics(BaseComponent):
 
     category = "output"
     display_name = "GateDynamics"
+    title = "门控动态分析"
     description = "LSTM 多门控时序曲线、条带热图与饱和度分析（可同时接 gate_i/f/o/cell_state）"
 
     @classmethod
@@ -670,10 +683,10 @@ class GateDynamics(BaseComponent):
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
             inputs=[
-                PortSpec(name="i", kind="tensor", rank=[3], layout="BLD", optional=True),
-                PortSpec(name="f", kind="tensor", rank=[3], layout="BLD", optional=True),
-                PortSpec(name="o", kind="tensor", rank=[3], layout="BLD", optional=True),
-                PortSpec(name="c", kind="tensor", rank=[3], layout="BLD", optional=True),
+                PortSpec(name="i", title="输入门序列", description="接 LSTM 的 tap:gate_i，BLD", kind="tensor", rank=[3], layout="BLD", optional=True),
+                PortSpec(name="f", title="遗忘门序列", description="接 LSTM 的 tap:gate_f，BLD", kind="tensor", rank=[3], layout="BLD", optional=True),
+                PortSpec(name="o", title="输出门序列", description="接 LSTM 的 tap:gate_o，BLD", kind="tensor", rank=[3], layout="BLD", optional=True),
+                PortSpec(name="c", title="细胞状态序列", description="接 LSTM 的 tap:cell_state，BLD", kind="tensor", rank=[3], layout="BLD", optional=True),
             ],
             outputs=[],
         )
@@ -807,6 +820,7 @@ class HiddenTrajectory(BaseComponent):
 
     category = "output"
     display_name = "HiddenTrajectory"
+    title = "隐状态轨迹"
     description = "隐状态 2D 相空间轨迹（PCA 投影展示状态从 t=0 到终点的演化路径）"
 
     @classmethod
@@ -820,7 +834,9 @@ class HiddenTrajectory(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[2, 3], layout="ANY")],
+            inputs=[
+                PortSpec(name="x", title="隐状态序列", description="BLD/BD 隐状态，PCA 投影到 2D 相空间", kind="tensor", rank=[2, 3], layout="ANY"),
+            ],
             outputs=[],
         )
 
@@ -912,6 +928,7 @@ class StepEnergy(BaseComponent):
 
     category = "output"
     display_name = "StepEnergy"
+    title = "时间步能量分析"
     description = "时间步响应能量与步间跃迁分析（识别关键记忆写入步与衰减）"
 
     @classmethod
@@ -931,7 +948,9 @@ class StepEnergy(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[3], layout="BLD")],
+            inputs=[
+                PortSpec(name="x", title="序列输入", description="BLD 序列，逐时间步计算响应能量", kind="tensor", rank=[3], layout="BLD"),
+            ],
             outputs=[],
         )
 

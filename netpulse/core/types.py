@@ -81,6 +81,9 @@ class PortSpec:
     require_mask: bool = False
     optional: bool = False
     dtype: str = "float32"
+    # 中文含义（如「输入特征图」）与简单介绍，供 WebUI 展示
+    title: str = ""
+    description: str = ""
 
 
 @dataclass(frozen=True)

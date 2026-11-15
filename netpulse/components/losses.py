@@ -27,16 +27,19 @@ class CrossEntropyLoss(BaseComponent):
 
     category = "loss"
     display_name = "CrossEntropyLoss"
+    title = "交叉熵损失"
     description = "多分类交叉熵监督损失目标"
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
             inputs=[
-                PortSpec(name="logits", kind="tensor", rank=[2], layout="BD"),
-                PortSpec(name="target", kind="tensor", rank=[1], layout="B", dtype="int64"),
+                PortSpec(name="logits", title="预测得分", description="BD 分类 logits（未过 softmax）", kind="tensor", rank=[2], layout="BD"),
+                PortSpec(name="target", title="真实标签", description="B 整型类别索引", kind="tensor", rank=[1], layout="B", dtype="int64"),
             ],
-            outputs=[PortSpec(name="loss", kind="loss", rank=[0], layout="SCALAR")],
+            outputs=[
+                PortSpec(name="loss", title="损失标量", description="0 维标量，汇总进 total_loss", kind="loss", rank=[0], layout="SCALAR"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
@@ -79,6 +82,7 @@ class ActivationRegLoss(BaseComponent):
 
     category = "loss"
     display_name = "ActivationRegLoss"
+    title = "激活正则损失"
     description = "可精确计算的隐层激活正则项（L1 / L2 / 正交去相关）"
 
     @classmethod
@@ -90,8 +94,12 @@ class ActivationRegLoss(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[2, 3, 4], layout="ANY")],
-            outputs=[PortSpec(name="loss", kind="loss", rank=[0], layout="SCALAR")],
+            inputs=[
+                PortSpec(name="x", title="被正则激活", description="任意隐层激活张量", kind="tensor", rank=[2, 3, 4], layout="ANY"),
+            ],
+            outputs=[
+                PortSpec(name="loss", title="正则标量", description="L1/L2/正交去相关的 0 维标量", kind="loss", rank=[0], layout="SCALAR"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
@@ -117,6 +125,7 @@ class MSELoss(BaseComponent):
 
     category = "loss"
     display_name = "MSELoss"
+    title = "均方误差损失"
     description = "均方误差回归损失（用于时序预测、连续值回归任务）"
 
     @classmethod
@@ -135,10 +144,12 @@ class MSELoss(BaseComponent):
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
             inputs=[
-                PortSpec(name="pred", kind="tensor", rank=[1, 2, 3, 4], layout="ANY"),
-                PortSpec(name="target", kind="tensor", rank=[1, 2, 3, 4], layout="ANY"),
+                PortSpec(name="pred", title="预测值", description="模型输出张量", kind="tensor", rank=[1, 2, 3, 4], layout="ANY"),
+                PortSpec(name="target", title="真实值", description="同形状回归真值", kind="tensor", rank=[1, 2, 3, 4], layout="ANY"),
             ],
-            outputs=[PortSpec(name="loss", kind="loss", rank=[0], layout="SCALAR")],
+            outputs=[
+                PortSpec(name="loss", title="损失标量", description="0 维标量，汇总进 total_loss", kind="loss", rank=[0], layout="SCALAR"),
+            ],
         )
 
     def expected_input_spec(

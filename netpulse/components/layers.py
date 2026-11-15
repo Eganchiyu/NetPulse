@@ -45,6 +45,7 @@ class Conv2dLayer(BaseComponent):
 
     category = "backbone"
     display_name = "Conv2d"
+    title = "二维卷积层"
     description = "原子 2D 卷积层（支持显式 in_channels 校验或自动推导）"
 
     @classmethod
@@ -64,8 +65,12 @@ class Conv2dLayer(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[4], layout="BCHW")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[4], layout="BCHW")],
+            inputs=[
+                PortSpec(name="x", title="输入特征图", description="待卷积的 BCHW 图像/特征图", kind="tensor", rank=[4], layout="BCHW"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="卷积输出", description="通道数变为 out_channels 的 BCHW 特征图", kind="tensor", rank=[4], layout="BCHW"),
+            ],
         )
 
     def expected_input_spec(
@@ -112,6 +117,7 @@ class Pool2dLayer(BaseComponent):
 
     category = "op"
     display_name = "Pool2d"
+    title = "二维池化层"
     description = "2D 空间池化（MaxPool2d / AvgPool2d）"
 
     @classmethod
@@ -126,8 +132,12 @@ class Pool2dLayer(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[4], layout="BCHW")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[4], layout="BCHW")],
+            inputs=[
+                PortSpec(name="x", title="输入特征图", description="BCHW 特征图", kind="tensor", rank=[4], layout="BCHW"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="池化输出", description="空间尺寸被窗口缩小的 BCHW 特征图", kind="tensor", rank=[4], layout="BCHW"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
@@ -150,6 +160,7 @@ class LinearLayer(BaseComponent):
 
     category = "backbone"
     display_name = "Linear"
+    title = "全连接层"
     description = "全连接线性层（特征投影或分类头）"
 
     @classmethod
@@ -164,8 +175,12 @@ class LinearLayer(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[2, 3], layout="ANY")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[2, 3], layout="ANY")],
+            inputs=[
+                PortSpec(name="x", title="输入向量", description="任意 ...D 或 BLD 张量，沿最后一维做线性映射", kind="tensor", rank=[2, 3], layout="ANY"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="线性输出", description="最后一维变为 out_features", kind="tensor", rank=[2, 3], layout="ANY"),
+            ],
         )
 
     def expected_input_spec(
@@ -197,6 +212,7 @@ class ActivationLayer(BaseComponent):
 
     category = "op"
     display_name = "Activation"
+    title = "激活函数"
     description = "逐元素激活函数层（ReLU/GELU/SiLU/Tanh/Sigmoid/Softmax）"
 
     @classmethod
@@ -215,8 +231,12 @@ class ActivationLayer(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[2, 3, 4], layout="ANY")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[2, 3, 4], layout="ANY")],
+            inputs=[
+                PortSpec(name="x", title="输入张量", description="任意 2~4 维张量", kind="tensor", rank=[2, 3, 4], layout="ANY"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="激活输出", description="逐元素激活后的同形状张量", kind="tensor", rank=[2, 3, 4], layout="ANY"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
@@ -248,6 +268,7 @@ class BatchNorm2dLayer(BaseComponent):
 
     category = "op"
     display_name = "BatchNorm2d"
+    title = "批归一化 (2D)"
     description = "2D 批归一化（BCHW 通道自动推导）"
 
     @classmethod
@@ -261,8 +282,12 @@ class BatchNorm2dLayer(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[4], layout="BCHW")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[4], layout="BCHW")],
+            inputs=[
+                PortSpec(name="x", title="输入特征图", description="BCHW 特征图，按通道统计", kind="tensor", rank=[4], layout="BCHW"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="归一化输出", description="同形状 BCHW，均值 0 方差 1", kind="tensor", rank=[4], layout="BCHW"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
@@ -282,6 +307,7 @@ class LayerNormLayer(BaseComponent):
 
     category = "op"
     display_name = "LayerNorm"
+    title = "层归一化"
     description = "层归一化（适配 BD / BLD）"
 
     @classmethod
@@ -294,8 +320,12 @@ class LayerNormLayer(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[2, 3], layout="ANY")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[2, 3], layout="ANY")],
+            inputs=[
+                PortSpec(name="x", title="输入张量", description="BD 或 BLD，对最后一维归一化", kind="tensor", rank=[2, 3], layout="ANY"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="归一化输出", description="同形状张量", kind="tensor", rank=[2, 3], layout="ANY"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
@@ -314,6 +344,7 @@ class DropoutLayer(BaseComponent):
 
     category = "op"
     display_name = "Dropout"
+    title = "随机失活 Dropout"
     description = "训练期随机失活正则化层"
 
     @classmethod
@@ -325,8 +356,12 @@ class DropoutLayer(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[2, 3, 4], layout="ANY")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[2, 3, 4], layout="ANY")],
+            inputs=[
+                PortSpec(name="x", title="输入张量", description="任意 2~4 维张量", kind="tensor", rank=[2, 3, 4], layout="ANY"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="失活输出", description="训练期随机置零并缩放的同形状张量", kind="tensor", rank=[2, 3, 4], layout="ANY"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:

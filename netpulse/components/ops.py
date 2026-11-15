@@ -28,6 +28,7 @@ class Flatten(BaseComponent):
 
     category = "op"
     display_name = "Flatten"
+    title = "张量展平"
     description = "高维张量展平为 BD 向量"
 
     @classmethod
@@ -39,8 +40,12 @@ class Flatten(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[2, 3, 4], layout="ANY")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[2], layout="BD")],
+            inputs=[
+                PortSpec(name="x", title="输入张量", description="2~4 维张量，从 start_dim 起展平", kind="tensor", rank=[2, 3, 4], layout="ANY"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="展平结果", description="形状 BD 的二维张量", kind="tensor", rank=[2], layout="BD"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
@@ -60,13 +65,18 @@ class GlobalAvgPool(BaseComponent):
 
     category = "op"
     display_name = "GlobalAvgPool"
+    title = "全局平均池化"
     description = "对空间维 H×W 求全局均值（BCHW -> BD）"
 
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[4], layout="BCHW")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[2], layout="BD")],
+            inputs=[
+                PortSpec(name="x", title="输入特征图", description="BCHW 特征图", kind="tensor", rank=[4], layout="BCHW"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="池化向量", description="对 H×W 求均值后的 BD 向量", kind="tensor", rank=[2], layout="BD"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
@@ -94,6 +104,7 @@ class MatrixBridge(BaseComponent):
 
     category = "bridge"
     display_name = "MatrixBridge"
+    title = "矩阵桥接投影"
     description = "可学习线性 / 1×1 Conv 空间投影桥"
 
     @classmethod
@@ -106,8 +117,12 @@ class MatrixBridge(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[2, 3, 4], layout="ANY")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[2, 3, 4], layout="ANY")],
+            inputs=[
+                PortSpec(name="x", title="输入张量", description="维度与下游不一致的特征", kind="tensor", rank=[2, 3, 4], layout="ANY"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="投影输出", description="对齐到目标维度的同阶张量", kind="tensor", rank=[2, 3, 4], layout="ANY"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
@@ -137,6 +152,7 @@ class TensorAdd(BaseComponent):
 
     category = "op"
     display_name = "TensorAdd"
+    title = "张量相加融合"
     description = "双路残差/特征加权融合（alpha·a + beta·b）"
 
     @classmethod
@@ -150,10 +166,12 @@ class TensorAdd(BaseComponent):
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
             inputs=[
-                PortSpec(name="a", kind="tensor", rank=[2, 3, 4], layout="ANY"),
-                PortSpec(name="b", kind="tensor", rank=[2, 3, 4], layout="ANY"),
+                PortSpec(name="a", title="主路输入", description="alpha 加权的第一路特征", kind="tensor", rank=[2, 3, 4], layout="ANY"),
+                PortSpec(name="b", title="支路输入", description="beta 加权的第二路特征", kind="tensor", rank=[2, 3, 4], layout="ANY"),
             ],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[2, 3, 4], layout="ANY")],
+            outputs=[
+                PortSpec(name="out", title="融合输出", description="alpha·a + beta·b 的逐元素和", kind="tensor", rank=[2, 3, 4], layout="ANY"),
+            ],
         )
 
     def expected_input_spec(
@@ -200,6 +218,7 @@ class ImageToSeq(BaseComponent):
 
     category = "op"
     display_name = "ImageToSeq"
+    title = "图像转序列"
     description = "将 4D 图像按行/列切片展开为 3D BLD 序列"
 
     @classmethod
@@ -217,8 +236,12 @@ class ImageToSeq(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[4], layout="BCHW")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[3], layout="BLD")],
+            inputs=[
+                PortSpec(name="x", title="输入图像", description="BCHW 图像/特征图", kind="tensor", rank=[4], layout="BCHW"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="序列张量", description="按行或列切片展开的 BLD 序列", kind="tensor", rank=[3], layout="BLD"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
@@ -268,6 +291,7 @@ class SeqPool(BaseComponent):
 
     category = "op"
     display_name = "SeqPool"
+    title = "序列池化"
     description = "序列池化（last 取末有效步 / mean / max，支持 Mask）"
 
     @classmethod
@@ -285,8 +309,12 @@ class SeqPool(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[3], layout="BLD")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[2], layout="BD")],
+            inputs=[
+                PortSpec(name="x", title="序列输入", description="BLD 序列，可带 mask", kind="tensor", rank=[3], layout="BLD"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="池化向量", description="last/mean/max 归约后的 BD 向量", kind="tensor", rank=[2], layout="BD"),
+            ],
         )
 
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:

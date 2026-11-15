@@ -16,6 +16,8 @@ class BaseComponent(ABC):
     type_id: ClassVar[str]
     category: ClassVar[CategoryKind]
     display_name: ClassVar[str] = ""
+    # 中文译名（如「二维卷积层」）与中文简介
+    title: ClassVar[str] = ""
     description: ClassVar[str] = ""
 
     @classmethod

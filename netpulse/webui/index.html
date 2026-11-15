@@ -471,6 +471,130 @@
     padding: 1px 6px; border-radius: 4px; background: var(--panel); border: 1px solid var(--border);
     font-size: 10px; color: #cbd5e1;
   }
+
+  /* ===== 文案与元件说明排版（中文优先） ===== */
+  .zh-name { color: var(--text); font-weight: 600; letter-spacing: .2px; }
+  .en-name {
+    color: var(--muted); font-family: ui-monospace, monospace;
+    font-size: 10px; letter-spacing: .2px;
+  }
+  .hint-text { color: #6e7681; font-size: 10.5px; line-height: 1.5; }
+
+  /* 元件库卡片 */
+  .palette-item { align-items: flex-start; padding: 7px 9px; }
+  .palette-item .palette-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .palette-item .palette-main .zh-name { font-size: 12.5px; line-height: 1.35; }
+  .palette-item .palette-main .en-name { font-size: 9.5px; }
+  .palette-item .palette-desc {
+    color: #6e7681; font-size: 10px; line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .palette-group-title { font-size: 10.5px; letter-spacing: .8px; }
+
+  /* 节点卡片文案 */
+  .node-card { width: 236px; }
+  .node-head { padding: 6px 8px 6px 10px; gap: 5px; }
+  .node-title { font-size: 13px; letter-spacing: .2px; line-height: 1.3; }
+  .node-type { font-size: 9.5px; padding: 1px 5px; }
+  .node-sub {
+    padding: 4px 10px 5px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+    font-size: 10px; color: #6e7681; border-bottom: 1px dashed rgba(48, 54, 61, .7);
+  }
+  .node-sub .node-sub-name { color: #9fb0c3; font-family: ui-monospace, monospace; font-size: 9.5px; }
+  .node-sub-desc {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; line-height: 1.5; word-break: break-word;
+  }
+  .pf-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #c9d1d9; cursor: pointer; }
+  .node-tools { display: flex; gap: 3px; flex: none; }
+  .node-tool-btn {
+    padding: 0 4px; height: 17px; line-height: 1; font-size: 10.5px; border-radius: 4px;
+    background: #1b222c; border: 1px solid var(--border); color: var(--muted); cursor: pointer;
+  }
+  .node-tool-btn:hover { color: var(--text); border-color: #4b5563; }
+  .node-tool-btn.on { color: var(--accent); border-color: rgba(56, 189, 248, .5); background: rgba(56, 189, 248, .12); }
+  .node-label-input {
+    width: 100%; font-size: 12.5px; padding: 2px 6px; border-radius: 5px;
+  }
+  .port-label { font-family: inherit; font-size: 11.5px; letter-spacing: .1px; }
+  .port-label b { font-weight: 500; color: #c9d1d9; }
+  .port-row { height: 21px; }
+  .port-row.tap .port-label b { color: var(--tap); font-weight: 500; }
+
+  /* 节点内联参数面板 */
+  .node-quick {
+    padding: 6px 9px 8px; border-top: 1px solid rgba(48, 54, 61, .75);
+    background: rgba(13, 17, 23, .6); display: flex; flex-direction: column; gap: 6px;
+  }
+  .node-quick .quick-tip { font-size: 10px; color: #6e7681; }
+  .node-quick .pf { display: grid; grid-template-columns: 84px 1fr auto; align-items: center; gap: 5px; }
+  .node-quick .pf-label { font-size: 10.5px; min-width: 0; }
+  .node-quick .pf-name {
+    color: #c9d1d9; font-family: ui-monospace, monospace; font-size: 10px;
+    display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .node-quick .pf-desc { display: none; }
+  .node-quick .pf input, .node-quick .pf select, .node-quick .pf textarea { font-size: 11px; padding: 2px 5px; width: 100%; }
+  .node-quick .pf-reset { padding: 0 4px; height: 20px; font-size: 11px; }
+
+  /* 检查器：元件信息卡 */
+  .comp-card { display: flex; flex-direction: column; gap: 8px; }
+  .comp-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .comp-head .comp-title { font-size: 15px; font-weight: 700; letter-spacing: .3px; line-height: 1.3; }
+  .comp-head .comp-en {
+    font-size: 10.5px; color: var(--muted); font-family: ui-monospace, monospace; margin-top: 3px;
+  }
+  .comp-cat {
+    flex: none; font-size: 10px; padding: 2px 7px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--panel); color: #9fb0c3;
+  }
+  .comp-desc { font-size: 12px; line-height: 1.7; color: #b9c6d4; }
+  .comp-node-id { font-size: 11px; color: var(--muted); }
+  .comp-node-id b { color: #c9d1d9; font-family: ui-monospace, monospace; font-weight: 500; }
+
+  /* 检查器：端口说明表 */
+  .port-table { display: flex; flex-direction: column; gap: 6px; }
+  .port-entry {
+    background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px;
+  }
+  .port-entry.out { border-left-color: var(--backbone); }
+  .port-entry.tap { border-left-color: var(--tap); }
+  .port-entry-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .port-entry-title { font-size: 12.5px; font-weight: 600; }
+  .port-entry-key { font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; }
+  .port-entry-desc { font-size: 11px; color: #9fb0c3; line-height: 1.6; }
+  .port-entry-meta { font-size: 10px; color: #6e7681; font-family: ui-monospace, monospace; }
+  .port-section-label {
+    font-size: 10px; font-weight: 700; letter-spacing: .6px; color: var(--muted);
+    text-transform: uppercase; margin: 2px 0 1px;
+  }
+
+  /* 参数表单排版 */
+  .card-title { font-size: 11.5px; letter-spacing: .6px; }
+  .card-title .card-title-sub {
+    font-size: 10px; font-weight: 500; letter-spacing: 0; text-transform: none;
+    color: #6e7681; font-family: ui-monospace, monospace;
+  }
+  .pf { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .pf-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .pf-name { font-size: 12px; color: #c9d1d9; font-family: ui-monospace, monospace; }
+  .pf-desc { font-size: 11px; color: #8fa1b3; line-height: 1.5; }
+  .pf-body { display: flex; align-items: center; gap: 6px; }
+  .pf-body > input, .pf-body > select, .pf-body > textarea { flex: 1; min-width: 0; }
+  .pf-reset {
+    flex: none; padding: 3px 7px; font-size: 11px; border-radius: 5px;
+    background: #1b222c; border: 1px solid var(--border); color: var(--muted); cursor: pointer;
+  }
+  .pf-reset:hover { color: var(--accent); border-color: rgba(56, 189, 248, .45); }
+  .pf.invalid input, .pf.invalid select, .pf.invalid textarea { border-color: var(--danger); }
+  .pf-err { font-size: 10.5px; color: var(--danger); line-height: 1.5; display: none; }
+  .pf.invalid .pf-err { display: block; }
+  .pf textarea { min-height: 52px; font-family: ui-monospace, monospace; }
+  .form-row label { font-size: 12px; line-height: 1.6; }
+  .form-row input[type="text"], .form-row input[type="number"], .form-row select, .form-row textarea { font-size: 12.5px; }
+  .card { padding: 11px 13px; }
+  .tab-pane { gap: 10px; }
 </style>
 </head>
 <body>
@@ -558,7 +682,7 @@
         <span><i class="legend-dot" style="background:var(--loss)"></i>Loss</span>
         <span><i class="legend-dot" style="background:var(--output)"></i>Output</span>
         <span><i class="legend-dot" style="background:var(--tap)"></i>Tap</span>
-        <span>| 双击画布添加节点 · 拖端口圆点连线 · Del 删除选中 · Ctrl+Z 撤销</span>
+        <span>| 双击画布添加节点 · 拖端口圆点连线 · 节点 ✎ 改名 / ⚙ 快速改参 · Del 删除选中 · Ctrl+Z 撤销</span>
       </div>
 
       <svg id="minimap" class="minimap" viewBox="0 0 156 104"></svg>
@@ -721,6 +845,7 @@ const state = {
   latestProbes: {},       // { nodeId: snapshot }
   modalProbeId: null,
   modalProbeTab: "auto",
+  expandedParams: {},     // { nodeId: true } 节点卡片内联参数面板展开状态
 };
 
 function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
@@ -825,7 +950,8 @@ function renderPalette(filterText = "") {
   let total = 0;
   for (const [tid, info] of Object.entries(state.components)) {
     total += 1;
-    const match = !q || tid.toLowerCase().includes(q) || (info.display_name || "").toLowerCase().includes(q) || (info.description || "").toLowerCase().includes(q);
+    const hay = [tid, info.display_name, info.title, info.description].filter(Boolean).join(" ").toLowerCase();
+    const match = !q || hay.includes(q);
     if (!match) continue;
     (byCat[info.category] = byCat[info.category] || []).push(info);
   }
@@ -841,8 +967,13 @@ function renderPalette(filterText = "") {
       el.className = "palette-item";
       el.dataset.cat = info.category;
       el.draggable = true;
-      el.title = info.description || info.type_id;
-      el.innerHTML = `<span>${info.display_name}</span><small>${info.type_id}</small>`;
+      el.title = `${info.title || info.display_name} ${info.display_name} — ${info.description || ""}`;
+      el.innerHTML = `
+        <div class="palette-main">
+          <span class="zh-name">${escText(info.title || info.display_name)}</span>
+          <span class="en-name">${escText(info.display_name || info.type_id)}</span>
+          <span class="palette-desc">${escText(info.description || "")}</span>
+        </div>`;
       el.addEventListener("dragstart", (ev) => {
         ev.dataTransfer.setData("text/netpulse-type", info.type_id);
       });
@@ -925,6 +1056,236 @@ function summarizeParams(type, params) {
     if (pick.length >= 4) break;
   }
   return pick.length ? pick.join(" · ") : "默认参数";
+}
+
+const CAT_ZH = { source: "数据源", backbone: "主干", op: "算子", bridge: "桥接", loss: "目标", output: "输出" };
+
+function escText(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function compInfo(typeId) {
+  return state.components[typeId] || null;
+}
+
+function compTitleZh(typeId) {
+  const c = compInfo(typeId);
+  return (c && (c.title || c.display_name)) || typeId;
+}
+
+// 端口中文含义 / 简介：优先取元件 Schema，动态抽头如 layer_3 回退到模板描述
+function portInfo(typeId, side, rawName) {
+  const comp = compInfo(typeId) || {};
+  const name = String(rawName || "").replace(/^tap:/, "");
+  const list = side === "in" ? comp.inputs : side === "out" ? comp.outputs : comp.taps;
+  let hit = (list || []).find((p) => p.name === name);
+  if (side === "tap") {
+    // 动态抽头（layer_0 / layer_1 ...）按序号生成中文名
+    const m = name.match(/^layer_(\d+)$/);
+    const tpl = hit || (comp.taps || [])[0];
+    if (m && tpl) hit = { title: `第 ${Number(m[1]) + 1} 层抽头`, description: tpl.description || "", layout: tpl.layout || "" };
+  }
+  return {
+    title: (hit && hit.title) || name,
+    description: (hit && hit.description) || "",
+    layout: hit && hit.layout ? hit.layout : "",
+    optional: Boolean(hit && hit.optional),
+  };
+}
+
+function paramSpecOf(comp, name) {
+  return ((comp && comp.params) || []).find((p) => p.name === name) || null;
+}
+
+function fmtParamValue(v) {
+  if (v === null || v === undefined) return "自动";
+  if (Array.isArray(v)) return `[${v.join(", ")}]`;
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+function paramControlHtml(ps, node) {
+  const has = node.params[ps.name] !== undefined && node.params[ps.name] !== null;
+  const val = has ? node.params[ps.name] : ps.default;
+  if (ps.type === "select") {
+    const cur = val === null || val === undefined ? "" : String(val);
+    let opts = "";
+    if (ps.default === null || ps.default === undefined) opts += `<option value="" ${cur === "" ? "selected" : ""}>(默认/自动)</option>`;
+    for (const opt of ps.options || []) {
+      const s = String(opt);
+      opts += `<option value="${escText(s)}" ${cur === s ? "selected" : ""}>${escText(s || "(默认/自动)")}</option>`;
+    }
+    return `<select data-param="${ps.name}" data-ptype="select">${opts}</select>`;
+  }
+  if (ps.type === "bool") {
+    return `<label class="pf-toggle"><input type="checkbox" data-param="${ps.name}" data-ptype="bool" ${val ? "checked" : ""} /><span>启用</span></label>`;
+  }
+  if (ps.type === "int" || ps.type === "float") {
+    const strVal = val === null || val === undefined ? "" : String(val);
+    const attrs = [
+      ps.min !== null && ps.min !== undefined ? `min="${ps.min}"` : "",
+      ps.max !== null && ps.max !== undefined ? `max="${ps.max}"` : "",
+      ps.step !== null && ps.step !== undefined ? `step="${ps.step}"` : "",
+    ].join(" ");
+    return `<input type="number" data-param="${ps.name}" data-ptype="${ps.type}" value="${escText(strVal)}" placeholder="自动" ${attrs} />`;
+  }
+  if (ps.type === "json") {
+    const strVal = val === null || val === undefined ? "" : JSON.stringify(val);
+    return `<textarea rows="2" data-param="${ps.name}" data-ptype="json" placeholder='例：[64, 10]'>${escText(strVal)}</textarea>`;
+  }
+  return `<input type="text" data-param="${ps.name}" data-ptype="string" value="${escText(val ?? "")}" />`;
+}
+
+function paramFieldHtml(ps, node, opts = {}) {
+  const isDefault = node.params[ps.name] === undefined || node.params[ps.name] === null;
+  const defTxt = ps.default === null || ps.default === undefined ? "自动" : fmtParamValue(ps.default);
+  const range = (ps.min !== null && ps.min !== undefined) || (ps.max !== null && ps.max !== undefined)
+    ? `${ps.min ?? "-∞"} ~ ${ps.max ?? "∞"}` : "";
+  const hint = [ps.description || "", range ? `范围 ${range}` : "", isDefault ? "" : `默认 ${defTxt}`]
+    .filter(Boolean).join(" · ");
+  const cls = opts.compact ? "pf pf-compact" : "pf";
+  return `
+    <div class="${cls}" data-pf="${ps.name}">
+      <div class="pf-head">
+        <span class="pf-name">${escText(ps.name)}</span>
+        <span class="pf-desc" title="${escText(hint)}">${escText(hint)}</span>
+      </div>
+      <div class="pf-body">
+        ${paramControlHtml(ps, node)}
+        <button type="button" class="pf-reset" data-reset="${ps.name}" title="恢复默认值（${escText(defTxt)}）">↺</button>
+      </div>
+      <div class="pf-err"></div>
+    </div>`;
+}
+
+function extraParamFieldsHtml(node, renderedKeys) {
+  const extra = Object.entries(node.params || {}).filter(([k]) => !renderedKeys.has(k));
+  if (!extra.length) return "";
+  return extra.map(([k, v]) => `
+    <div class="pf" data-pf="${k}">
+      <div class="pf-head"><span class="pf-name">${escText(k)}</span><span class="pf-desc">高级 JSON（不在 Schema 中）</span></div>
+      <div class="pf-body">
+        <textarea rows="2" data-param="${k}" data-ptype="json">${escText(JSON.stringify(v))}</textarea>
+      </div>
+      <div class="pf-err"></div>
+    </div>`).join("");
+}
+
+function setFieldInvalid(field, message) {
+  if (!field) return;
+  field.classList.toggle("invalid", Boolean(message));
+  const err = field.querySelector(".pf-err");
+  if (err) err.textContent = message || "";
+}
+
+// 参数表单绑定：类型转换 + 范围/JSON 校验 + 恢复默认
+function bindParamForm(scope, node, comp, onChange) {
+  scope.querySelectorAll("[data-param]").forEach((inp) => {
+    const pname = inp.dataset.param;
+    const ptype = inp.dataset.ptype;
+    const ps = paramSpecOf(comp, pname);
+    const field = inp.closest(".pf");
+    const commit = () => {
+      const raw = inp.value.trim();
+      let val;
+      if (ptype === "bool") {
+        val = inp.checked;
+      } else if (ptype === "int" || ptype === "float") {
+        if (raw === "") {
+          val = undefined;
+        } else {
+          val = ptype === "int" ? parseInt(raw, 10) : parseFloat(raw);
+          if (!Number.isFinite(val)) return setFieldInvalid(field, "请输入数字");
+          if (ps && ps.min !== null && ps.min !== undefined && val < ps.min) return setFieldInvalid(field, `不得小于 ${ps.min}`);
+          if (ps && ps.max !== null && ps.max !== undefined && val > ps.max) return setFieldInvalid(field, `不得大于 ${ps.max}`);
+        }
+      } else if (ptype === "json") {
+        if (raw === "") {
+          val = undefined;
+        } else {
+          try {
+            val = JSON.parse(raw);
+          } catch (err) {
+            return setFieldInvalid(field, "JSON 格式错误");
+          }
+        }
+      } else if (ptype === "select") {
+        val = raw === "" ? undefined : raw;
+      } else {
+        val = inp.value;
+      }
+      setFieldInvalid(field, null);
+      const prev = node.params[pname];
+      if (val === undefined && prev === undefined) return;
+      if (val !== undefined && JSON.stringify(prev) === JSON.stringify(val)) return;
+      pushUndo();
+      if (val === undefined) {
+        delete node.params[pname];
+        if (ptype === "int" || ptype === "float") inp.value = "";
+      } else {
+        node.params[pname] = val;
+      }
+      if (onChange) onChange();
+    };
+    inp.addEventListener("change", commit);
+    if (ptype === "json") inp.addEventListener("blur", commit);
+  });
+  scope.querySelectorAll("[data-reset]").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const pname = btn.dataset.reset;
+      const ps = paramSpecOf(comp, pname);
+      const field = btn.closest(".pf");
+      if (!ps) return;
+      pushUndo();
+      if (ps.default === null || ps.default === undefined) delete node.params[pname];
+      else node.params[pname] = deepClone(ps.default);
+      setFieldInvalid(field, null);
+      const inp = field.querySelector("[data-param]");
+      if (inp) {
+        if (ps.type === "bool") inp.checked = Boolean(ps.default);
+        else if (ps.type === "json") inp.value = ps.default === null || ps.default === undefined ? "" : JSON.stringify(ps.default);
+        else if (ps.type === "select") inp.value = ps.default === null || ps.default === undefined ? "" : String(ps.default);
+        else inp.value = ps.default === null || ps.default === undefined ? "" : String(ps.default);
+      }
+      if (onChange) onChange();
+    });
+  });
+}
+
+function startNodeRename(card, viewNode, draftNode) {
+  const titleEl = card.querySelector(".node-title");
+  if (!titleEl) return;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "node-label-input";
+  input.value = viewNode.label || "";
+  input.placeholder = viewNode.title || viewNode.type;
+  titleEl.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const commit = (save) => {
+    if (done) return;
+    done = true;
+    const next = save ? input.value.trim() : (viewNode.label || "");
+    const label = next ? next : null;
+    if (label !== (viewNode.label || null)) {
+      pushUndo();
+      if (draftNode) draftNode.label = label;
+      viewNode.label = label;
+      scheduleLiveErc();
+    } else {
+      input.replaceWith(titleEl);
+    }
+  };
+  input.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  input.addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Enter") commit(true);
+    else if (ev.key === "Escape") commit(false);
+  });
+  input.addEventListener("blur", () => commit(true));
 }
 
 function getPortPos(nodeId, portName, side, isTap = false) {
@@ -1026,7 +1387,7 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
   if (opts.syncDraft) {
     state.draftGraph = {
       name: data.graph_name || "untitled_graph",
-      nodes: data.nodes.map((n) => ({ id: n.id, type: n.type, params: deepClone(n.params || {}), position: { ...n.position } })),
+      nodes: data.nodes.map((n) => ({ id: n.id, type: n.type, params: deepClone(n.params || {}), position: { ...n.position }, label: n.label || null })),
       edges: data.edges.map((e) => ({
         id: e.id, src_node: e.src_node, src_port: e.src_port,
         dst_node: e.dst_node, dst_port: e.dst_port,
@@ -1086,15 +1447,24 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
     card.style.left = `${node.position.x}px`;
     card.style.top = `${node.position.y}px`;
 
-    const inHtml = node.inputs.map((p) =>
-      `<div class="port-row" data-port="${p}" data-node="${node.id}" data-side="in"><span class="port-dot" title="拖入连线到此输入端口 (${p})"></span><span class="port-label">${p}</span></div>`
-    ).join("");
-    const outHtml = node.outputs.map((p) =>
-      `<div class="port-row" data-port="${p}" data-tap="0" data-node="${node.id}" data-side="out"><span class="port-label">${p}</span><span class="port-dot" title="按住拖出连线 (${p})"></span></div>`
-    ).join("");
-    const tapHtml = node.taps.map((t) =>
-      `<div class="port-row tap" data-port="${t}" data-tap="1" data-node="${node.id}" data-side="out"><span class="port-label">tap:${t}</span><span class="port-dot tap" title="按住拖出隐层抽头连线 (tap:${t})"></span></div>`
-    ).join("");
+    const comp = compInfo(node.type) || { params: [], inputs: [], outputs: [], taps: [] };
+    const quickOpen = Boolean(state.expandedParams[node.id]);
+
+    const inHtml = node.inputs.map((p) => {
+      const pi = portInfo(node.type, "in", p);
+      const tip = `${p} · ${pi.title}${pi.description ? " — " + pi.description : ""}`;
+      return `<div class="port-row" data-port="${p}" data-node="${node.id}" data-side="in"><span class="port-dot" title="拖入连线到此输入端口（${tip}）"></span><span class="port-label" title="${escText(tip)}"><b>${escText(pi.title)}</b></span></div>`;
+    }).join("");
+    const outHtml = node.outputs.map((p) => {
+      const pi = portInfo(node.type, "out", p);
+      const tip = `${p} · ${pi.title}${pi.description ? " — " + pi.description : ""}`;
+      return `<div class="port-row" data-port="${p}" data-tap="0" data-node="${node.id}" data-side="out"><span class="port-label" title="${escText(tip)}"><b>${escText(pi.title)}</b></span><span class="port-dot" title="按住拖出连线（${tip}）"></span></div>`;
+    }).join("");
+    const tapHtml = node.taps.map((t) => {
+      const pi = portInfo(node.type, "tap", t);
+      const tip = `tap:${t} · ${pi.title}${pi.description ? " — " + pi.description : ""}`;
+      return `<div class="port-row tap" data-port="${t}" data-tap="1" data-node="${node.id}" data-side="out"><span class="port-label" title="${escText(tip)}"><b>${escText(pi.title)}</b></span><span class="port-dot tap" title="按住拖出隐层抽头连线（${tip}）"></span></div>`;
+    }).join("");
 
     const shapeEntry = Object.entries(node.out_specs || {})[0];
     const inShapeEntry = Object.entries(node.in_specs || {})[0];
@@ -1123,18 +1493,70 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
         </div>
       `;
 
+    const renderedKeys = new Set(((comp && comp.params) || []).map((p) => p.name));
+    const quickFields = ((comp && comp.params) || []).map((ps) => paramFieldHtml(ps, node, { compact: true })).join("");
+    const quickExtra = extraParamFieldsHtml(node, renderedKeys);
+    const quickHtml = quickOpen
+      ? `<div class="node-quick">
+           <div class="quick-tip">快速参数编辑 · 改值后自动重算 ERC</div>
+           ${quickFields}${quickExtra}
+           ${quickFields || quickExtra ? "" : `<div class="quick-tip">该元件无可编辑参数</div>`}
+         </div>`
+      : "";
+
+    const titleZh = node.title || compTitleZh(node.type);
+    const headLabel = node.label || titleZh;
+    const subParts = [];
+    if (node.label) subParts.push(escText(titleZh));
+    if (node.description || (comp && comp.description)) subParts.push(escText(node.description || comp.description));
+
     card.innerHTML = `
       <div class="node-head">
-        <span class="node-title" title="${node.id}">${node.id}</span>
-        <span class="node-type">${node.type}</span>
+        <span class="node-title" title="${escText(node.id)}">${escText(headLabel)}</span>
+        <span class="node-type" title="元件类型 ${escText(node.type)}">${escText(node.display_name || node.type)}</span>
+        <span class="node-tools">
+          <button type="button" class="node-tool-btn" data-act="rename" title="重命名显示标签">✎</button>
+          <button type="button" class="node-tool-btn ${quickOpen ? "on" : ""}" data-act="params" title="展开/收起快速参数编辑">⚙</button>
+        </span>
       </div>
+      ${subParts.length ? `<div class="node-sub"><span class="node-sub-desc">${subParts.join(" · ")}</span></div>` : ""}
       <div class="node-params">${summarizeParams(node.type, node.params)}</div>
       <div class="node-ports">
         <div class="ports-col left">${inHtml}</div>
         <div class="ports-col right">${outHtml}${tapHtml}</div>
       </div>
+      ${quickHtml}
       ${footerHtml}
     `;
+
+    const draftNode = state.draftGraph ? state.draftGraph.nodes.find((n) => n.id === node.id) : null;
+    card.querySelectorAll(".node-tool-btn").forEach((btn) => {
+      btn.addEventListener("mousedown", (ev) => { ev.stopPropagation(); ev.preventDefault(); });
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (btn.dataset.act === "rename") {
+          startNodeRename(card, node, draftNode);
+          return;
+        }
+        state.selectedNodeId = node.id;
+        state.selectedEdgeId = null;
+        state.expandedParams[node.id] = !state.expandedParams[node.id];
+        renderNodeSelection();
+        renderEdges();
+        renderInspector();
+        btn.classList.toggle("on", Boolean(state.expandedParams[node.id]));
+        // 延后重绘，避免在节点构建循环中重入 renderGraph
+        setTimeout(() => renderGraph(data, { fit: false, syncDraft: false }), 0);
+      });
+    });
+
+    if (quickOpen) {
+      bindParamForm(card.querySelector(".node-quick"), draftNode || node, comp, () => {
+        scheduleLiveErc();
+      });
+      card.querySelectorAll(".node-quick input, .node-quick select, .node-quick textarea, .node-quick button")
+        .forEach((el) => el.addEventListener("mousedown", (ev) => ev.stopPropagation()));
+    }
 
     if (node.category === "output") {
       const expandBtn = card.querySelector(".probe-expand-btn");
@@ -1160,6 +1582,7 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
 
     card.addEventListener("mousedown", (ev) => {
       if (ev.target.closest(".port-dot")) return;
+      if (ev.target.closest(".node-quick") || ev.target.closest(".node-tool-btn") || ev.target.closest(".node-label-input")) return;
       ev.stopPropagation();
       state.selectedNodeId = node.id;
       state.selectedEdgeId = null;
@@ -1295,12 +1718,21 @@ function renderInspector() {
   if (state.selectedEdgeId) {
     const edge = state.draftGraph.edges.find((e) => e.id === state.selectedEdgeId);
     const vEdge = state.viewData?.edges?.find((e) => e.id === state.selectedEdgeId);
+    const srcNodeType = state.viewData?.nodes?.find((n) => n.id === edge?.src_node)?.type || "";
+    const dstNodeType = state.viewData?.nodes?.find((n) => n.id === edge?.dst_node)?.type || "";
     if (edge) {
       box.innerHTML = `
         <div class="card">
-          <div class="card-title"><span>连线属性 (${edge.id})</span></div>
-          <div class="form-row"><label>流向</label><div style="font-family:ui-monospace,monospace;font-size:12px">${edge.src_node}.${edge.src_port} → ${edge.dst_node}.${edge.dst_port}</div></div>
-          <div class="form-row"><label>类型</label><div style="font-size:12px">${edge.edge_kind} ${vEdge?.shape ? `· shape=(${vEdge.shape.join(",")})` : ""}</div></div>
+          <div class="card-title"><span>连线属性</span><span class="card-title-sub">${escText(edge.id)}</span></div>
+          <div class="form-row">
+            <label>数据流向</label>
+            <div style="font-size:12px;line-height:1.7">
+              <div><b>${escText(edge.src_node)}</b> · ${escText(portInfo(srcNodeType, edge.edge_kind === "tap" ? "tap" : "out", edge.src_port).title)} <span class="en-name">${escText(edge.src_port)}</span></div>
+              <div style="color:var(--accent)">↓</div>
+              <div><b>${escText(edge.dst_node)}</b> · ${escText(portInfo(dstNodeType, "in", edge.dst_port).title)} <span class="en-name">${escText(edge.dst_port)}</span></div>
+            </div>
+          </div>
+          <div class="form-row"><label>类型</label><div style="font-size:12px">${escText(edge.edge_kind)} ${vEdge?.shape ? `· shape=(${vEdge.shape.join(",")})` : ""}</div></div>
           <div class="form-row">
             <label>AutoBridge 自动矩阵桥</label>
             <select id="edgeBridgeSel">
@@ -1324,99 +1756,127 @@ function renderInspector() {
   if (state.selectedNodeId) {
     const node = state.draftGraph.nodes.find((n) => n.id === state.selectedNodeId);
     if (node) {
-      const comp = state.components[node.type] || { display_name: node.type, description: "", params: [] };
+      const comp = state.components[node.type] || { display_name: node.type, title: node.type, description: "", params: [], inputs: [], outputs: [], taps: [] };
       const lossCfg = state.draftGraph.losses.find((l) => l.node_id === node.id);
+      const viewNode = (state.viewData?.nodes || []).find((n) => n.id === node.id) || {};
+      const titleZh = comp.title || comp.display_name || node.type;
 
-      let html = `
-        <div class="card">
-          <div class="card-title"><span>节点: ${node.id}</span><span>${comp.display_name || node.type}</span></div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${comp.description || ""}</div>
-      `;
+      const portEntries = [];
+      for (const name of viewNode.inputs || []) {
+        const pi = portInfo(node.type, "in", name);
+        const spec = (viewNode.in_specs || {})[name];
+        const meta = [
+          `端口 ${name}`,
+          pi.layout ? `布局 ${pi.layout}` : "",
+          spec ? `shape=(${spec.shape.join(",")})` : "",
+          pi.optional ? "可选" : "",
+        ].filter(Boolean).join(" · ");
+        portEntries.push(`
+          <div class="port-entry in">
+            <div class="port-entry-head"><span class="port-entry-title">${escText(pi.title)}</span><span class="port-entry-key">输入 · ${escText(name)}</span></div>
+            <div class="port-entry-desc">${escText(pi.description || "未填写说明")}</div>
+            <div class="port-entry-meta">${escText(meta)}</div>
+          </div>`);
+      }
+      for (const name of viewNode.outputs || []) {
+        const pi = portInfo(node.type, "out", name);
+        const spec = (viewNode.out_specs || {})[name];
+        const meta = [`端口 ${name}`, pi.layout ? `布局 ${pi.layout}` : "", spec ? `shape=(${spec.shape.join(",")})` : ""]
+          .filter(Boolean).join(" · ");
+        portEntries.push(`
+          <div class="port-entry out">
+            <div class="port-entry-head"><span class="port-entry-title">${escText(pi.title)}</span><span class="port-entry-key">输出 · ${escText(name)}</span></div>
+            <div class="port-entry-desc">${escText(pi.description || "未填写说明")}</div>
+            <div class="port-entry-meta">${escText(meta)}</div>
+          </div>`);
+      }
+      for (const name of viewNode.taps || []) {
+        const pi = portInfo(node.type, "tap", name);
+        const spec = (viewNode.tap_specs || {})[name];
+        const meta = [`tap:${name}`, pi.layout ? `布局 ${pi.layout}` : "", spec ? `shape=(${spec.shape.join(",")})` : ""]
+          .filter(Boolean).join(" · ");
+        portEntries.push(`
+          <div class="port-entry tap">
+            <div class="port-entry-head"><span class="port-entry-title">${escText(pi.title)}</span><span class="port-entry-key">抽头 · tap:${escText(name)}</span></div>
+            <div class="port-entry-desc">${escText(pi.description || "未填写说明")}</div>
+            <div class="port-entry-meta">${escText(meta)}</div>
+          </div>`);
+      }
+      const portCount = { in: (viewNode.inputs || []).length, out: (viewNode.outputs || []).length, tap: (viewNode.taps || []).length };
 
       const renderedKeys = new Set();
+      let paramHtml = "";
       for (const ps of (comp.params || [])) {
         renderedKeys.add(ps.name);
-        const val = node.params[ps.name] !== undefined ? node.params[ps.name] : ps.default;
-        html += `<div class="form-row"><label><span>${ps.name}</span><span style="color:#6e7681">${ps.description || ""}</span></label>`;
-        if (ps.type === "select") {
-          const cur = val === null || val === undefined ? "" : String(val);
-          html += `<select data-param="${ps.name}" data-ptype="select">`;
-          for (const opt of (ps.options || [])) {
-            const s = String(opt);
-            html += `<option value="${s}" ${cur === s ? "selected" : ""}>${s || "(默认/自动)"}</option>`;
-          }
-          html += `</select>`;
-        } else if (ps.type === "bool") {
-          html += `<div class="form-inline"><span>启用</span><input type="checkbox" data-param="${ps.name}" data-ptype="bool" ${val ? "checked" : ""} /></div>`;
-        } else if (ps.type === "int" || ps.type === "float") {
-          const strVal = val === null || val === undefined ? "" : String(val);
-          html += `<input type="number" data-param="${ps.name}" data-ptype="${ps.type}" value="${strVal}" placeholder="自动" ${ps.min !== null ? `min="${ps.min}"` : ""} ${ps.max !== null ? `max="${ps.max}"` : ""} ${ps.step !== null ? `step="${ps.step}"` : ""} />`;
-        } else if (ps.type === "json") {
-          const strVal = val === null || val === undefined ? "" : JSON.stringify(val);
-          html += `<input type="text" data-param="${ps.name}" data-ptype="json" value='${strVal}' />`;
-        } else {
-          html += `<input type="text" data-param="${ps.name}" data-ptype="string" value="${val ?? ""}" />`;
-        }
-        html += `</div>`;
+        paramHtml += paramFieldHtml(ps, node);
       }
+      paramHtml += extraParamFieldsHtml(node, renderedKeys);
 
-      // 渲染不在 schema 里但已存在的额外参数（如 layers 数组等高级配置）
-      for (const [k, v] of Object.entries(node.params || {})) {
-        if (renderedKeys.has(k)) continue;
-        html += `
-          <div class="form-row">
-            <label><span>${k}</span><span style="color:#6e7681">高级 JSON</span></label>
-            <textarea rows="2" data-param="${k}" data-ptype="json">${JSON.stringify(v)}</textarea>
+      let html = `
+        <div class="card comp-card">
+          <div class="comp-head">
+            <div>
+              <div class="comp-title">${escText(titleZh)}</div>
+              <div class="comp-en">${escText(comp.display_name || node.type)} · ${escText(node.type)}</div>
+            </div>
+            <span class="comp-cat">${escText(CAT_ZH[comp.category] || comp.category || "-")}</span>
           </div>
-        `;
-      }
+          <div class="comp-desc">${escText(comp.description || "（该元件暂无简介）")}</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span>节点标识</span><span class="card-title-sub">改名不影响连线与 ERC</span></div>
+          <div class="comp-node-id" style="margin-bottom:8px">节点 id <b>${escText(node.id)}</b></div>
+          <div class="pf" style="margin-bottom:0">
+            <div class="pf-head"><span class="pf-name">显示标签</span><span class="pf-desc">留空则显示中文名「${escText(titleZh)}」</span></div>
+            <div class="pf-body"><input id="nodeLabelInput" type="text" value="${escText(node.label || "")}" placeholder="${escText(titleZh)}" /></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span>端口说明</span><span class="card-title-sub">输入 ${portCount.in} · 输出 ${portCount.out} · 抽头 ${portCount.tap}</span></div>
+          <div class="port-table">
+            ${portEntries.length ? portEntries.join("") : `<div class="hint-text">该元件没有端口（终端探针类型）</div>`}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title"><span>元件参数</span><span class="card-title-sub">${(comp.params || []).length} 项 · 留空表示自动</span></div>
+          ${paramHtml || `<div class="hint-text">该元件无可配置参数</div>`}
+        </div>
+      `;
 
       if (lossCfg) {
         html += `
-          <div class="divider" style="width:100%;height:1px;margin:8px 0"></div>
-          <div class="form-inline">
-            <span>纳入 total_loss 训练目标</span>
-            <input id="lossEnabledChk" type="checkbox" ${lossCfg.enabled !== false ? "checked" : ""} />
-          </div>
-          <div class="form-row">
-            <label><span>Loss 权重 (weight)</span></label>
-            <input id="lossWeightInp" type="number" step="0.05" min="0" value="${lossCfg.weight ?? 1.0}" />
+          <div class="card">
+            <div class="card-title"><span>训练目标汇集</span><span class="card-title-sub">total_loss</span></div>
+            <div class="form-inline">
+              <span>纳入 total_loss 训练目标</span>
+              <input id="lossEnabledChk" type="checkbox" ${lossCfg.enabled !== false ? "checked" : ""} />
+            </div>
+            <div class="pf" style="margin-bottom:0">
+              <div class="pf-head"><span class="pf-name">weight</span><span class="pf-desc">该损失项在 total_loss 中的权重</span></div>
+              <div class="pf-body"><input id="lossWeightInp" type="number" step="0.05" min="0" value="${lossCfg.weight ?? 1.0}" /></div>
+            </div>
           </div>
         `;
       }
 
-      html += `<button id="delSelectedBtn" class="danger" style="width:100%;margin-top:6px">删除此节点 (Del)</button></div>`;
+      html += `<button id="delSelectedBtn" class="danger" style="width:100%">删除此节点 (Del)</button>`;
       box.innerHTML = html;
 
-      box.querySelectorAll("[data-param]").forEach((inp) => {
-        const eventName = inp.tagName === "SELECT" || inp.type === "checkbox" ? "change" : "change";
-        inp.addEventListener(eventName, () => {
-          const pname = inp.dataset.param;
-          const ptype = inp.dataset.ptype;
+      bindParamForm(box, node, comp, () => scheduleLiveErc());
+
+      const labelInp = $("nodeLabelInput");
+      if (labelInp) {
+        labelInp.addEventListener("change", () => {
+          const next = labelInp.value.trim();
+          if (next === (node.label || "")) return;
           pushUndo();
-          if (ptype === "bool") {
-            node.params[pname] = inp.checked;
-          } else if (ptype === "int") {
-            if (inp.value.trim() === "") delete node.params[pname];
-            else node.params[pname] = parseInt(inp.value, 10);
-          } else if (ptype === "float") {
-            if (inp.value.trim() === "") delete node.params[pname];
-            else node.params[pname] = parseFloat(inp.value);
-          } else if (ptype === "select") {
-            if (inp.value === "") delete node.params[pname];
-            else node.params[pname] = inp.value;
-          } else if (ptype === "json") {
-            try {
-              node.params[pname] = JSON.parse(inp.value);
-            } catch {
-              return;
-            }
-          } else {
-            node.params[pname] = inp.value;
-          }
+          node.label = next ? next : null;
           scheduleLiveErc();
         });
-      });
+      }
 
       if (lossCfg) {
         $("lossEnabledChk").addEventListener("change", (ev) => {
@@ -1439,19 +1899,38 @@ function renderInspector() {
   const tr = state.draftGraph.trainer;
   box.innerHTML = `
     <div class="card">
-      <div class="card-title"><span>全局训练超参数 (Trainer)</span></div>
-      <div class="form-row"><label>图名称</label><input id="trGraphName" type="text" value="${state.draftGraph.name}" /></div>
-      <div class="form-row"><label>优化器</label>
-        <select id="trOpt">
-          <option value="adam" ${tr.optimizer === "adam" ? "selected" : ""}>adam</option>
-          <option value="adamw" ${tr.optimizer === "adamw" ? "selected" : ""}>adamw</option>
-          <option value="sgd" ${tr.optimizer === "sgd" ? "selected" : ""}>sgd</option>
-        </select>
+      <div class="card-title"><span>未选中元件</span><span class="card-title-sub">点击节点可编辑其参数与端口说明</span></div>
+      <div class="hint-text">下方为整图训练超参数；节点上的 ✎ 改显示名，⚙ 展开快速参数面板。</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span>全局训练超参数</span><span class="card-title-sub">Trainer</span></div>
+      <div class="pf">
+        <div class="pf-head"><span class="pf-name">图名称</span><span class="pf-desc">工作流标题，保存时写入 GraphIR.name</span></div>
+        <div class="pf-body"><input id="trGraphName" type="text" value="${escText(state.draftGraph.name)}" /></div>
       </div>
-      <div class="form-row"><label>学习率 (lr)</label><input id="trLr" type="number" step="0.0005" value="${tr.lr}" /></div>
-      <div class="form-row"><label>Batch Size</label><input id="trBs" type="number" step="16" value="${tr.batch_size}" /></div>
-      <div class="form-row"><label>Epochs</label><input id="trEp" type="number" step="1" value="${tr.epochs}" /></div>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px">提示：点击任意节点或连线可在此编辑其参数。</div>
+      <div class="pf">
+        <div class="pf-head"><span class="pf-name">优化器</span><span class="pf-desc">adam 通吃 / adamw 带解耦权重衰减 / sgd 经典</span></div>
+        <div class="pf-body">
+          <select id="trOpt">
+            <option value="adam" ${tr.optimizer === "adam" ? "selected" : ""}>adam</option>
+            <option value="adamw" ${tr.optimizer === "adamw" ? "selected" : ""}>adamw</option>
+            <option value="sgd" ${tr.optimizer === "sgd" ? "selected" : ""}>sgd</option>
+          </select>
+        </div>
+      </div>
+      <div class="pf">
+        <div class="pf-head"><span class="pf-name">学习率 lr</span><span class="pf-desc">步长，分类任务常用 1e-3 起调</span></div>
+        <div class="pf-body"><input id="trLr" type="number" step="0.0005" value="${tr.lr}" /></div>
+      </div>
+      <div class="pf">
+        <div class="pf-head"><span class="pf-name">批大小</span><span class="pf-desc">每个 step 送入的样本数</span></div>
+        <div class="pf-body"><input id="trBs" type="number" step="16" value="${tr.batch_size}" /></div>
+      </div>
+      <div class="pf" style="margin-bottom:0">
+        <div class="pf-head"><span class="pf-name">训练轮数</span><span class="pf-desc">完整遍历数据集的次数</span></div>
+        <div class="pf-body"><input id="trEp" type="number" step="1" value="${tr.epochs}" /></div>
+      </div>
     </div>
   `;
   $("trGraphName").addEventListener("change", (e) => { pushUndo(); state.draftGraph.name = e.target.value; });
@@ -2544,15 +3023,18 @@ function closeQuickSearch() { $("quickSearch").classList.remove("open"); }
 function renderQuickSearchList(q) {
   const list = $("quickSearchList");
   const lower = q.trim().toLowerCase();
-  const matches = Object.values(state.components).filter((c) =>
-    !lower || c.type_id.toLowerCase().includes(lower) || c.display_name.toLowerCase().includes(lower)
-  );
+  const matches = Object.values(state.components).filter((c) => {
+    if (!lower) return true;
+    return [c.type_id, c.display_name, c.title, c.description]
+      .filter(Boolean).some((s) => String(s).toLowerCase().includes(lower));
+  });
   list.innerHTML = "";
   matches.slice(0, 12).forEach((c, idx) => {
     const item = document.createElement("div");
     item.className = `quick-search-item${idx === 0 ? " focused" : ""}`;
     item.dataset.type = c.type_id;
-    item.innerHTML = `<span>${c.display_name}</span><small>${c.type_id}</small>`;
+    item.title = c.description || "";
+    item.innerHTML = `<span class="zh-name">${escText(c.title || c.display_name)}</span><small>${escText(c.display_name || c.type_id)}</small>`;
     item.addEventListener("click", () => {
       addNodeAt(c.type_id, state.quickPos.x, state.quickPos.y);
       closeQuickSearch();

@@ -132,6 +132,7 @@ class CNNBlock(BaseComponent):
 
     category = "backbone"
     display_name = "CNN Block"
+    title = "CNN 宏模块"
     description = "多层 2D CNN 宏模块（每层暴露 Hook Tap）"
 
     @classmethod
@@ -155,13 +156,17 @@ class CNNBlock(BaseComponent):
             TapSpec(
                 name=f"layer_{i}",
                 source=f"layers.{i}",
-                spec=PortSpec(name=f"layer_{i}", kind="tensor", rank=[4], layout="BCHW"),
+                spec=PortSpec(name=f"layer_{i}", title="第 i 层抽头", description="该层卷积(+池化)后的中间特征图", kind="tensor", rank=[4], layout="BCHW"),
             )
             for i in range(num_layers)
         ]
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[4], layout="BCHW")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[4], layout="BCHW")],
+            inputs=[
+                PortSpec(name="x", title="输入特征图", description="BCHW 输入，通道可为 1 或 3", kind="tensor", rank=[4], layout="BCHW"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="模块输出", description="最后一层卷积/池化后的 BCHW 特征图", kind="tensor", rank=[4], layout="BCHW"),
+            ],
             taps=taps,
         )
 
@@ -241,6 +246,7 @@ class MLPBlock(BaseComponent):
 
     category = "backbone"
     display_name = "MLP Block"
+    title = "MLP 宏模块"
     description = "多层全连接宏模块（支持 BD / BLD 与每层 Tap 抽头）"
 
     @classmethod
@@ -261,13 +267,17 @@ class MLPBlock(BaseComponent):
             TapSpec(
                 name=f"layer_{i}",
                 source=f"layers.{i}",
-                spec=PortSpec(name=f"layer_{i}", kind="tensor", rank=[2, 3], layout="ANY"),
+                spec=PortSpec(name=f"layer_{i}", title="第 i 层抽头", description="该层全连接(+激活)后的中间激活", kind="tensor", rank=[2, 3], layout="ANY"),
             )
             for i in range(len(dims))
         ]
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[2, 3], layout="ANY")],
-            outputs=[PortSpec(name="out", kind="tensor", rank=[2, 3], layout="ANY")],
+            inputs=[
+                PortSpec(name="x", title="输入向量", description="BD 或 BLD 输入，沿最后一维展开为多层全连接", kind="tensor", rank=[2, 3], layout="ANY"),
+            ],
+            outputs=[
+                PortSpec(name="out", title="模块输出", description="最后一层输出维度 dims[-1]", kind="tensor", rank=[2, 3], layout="ANY"),
+            ],
             taps=taps,
         )
 
@@ -433,6 +443,7 @@ class LSTMLayer(BaseComponent):
 
     category = "backbone"
     display_name = "LSTM"
+    title = "长短期记忆网络 LSTM"
     description = "门控长短期记忆网络（支持 Mask、last_h/c 输出与门控序列抽头）"
 
     @classmethod
@@ -455,18 +466,20 @@ class LSTMLayer(BaseComponent):
     @classmethod
     def declare_ports(cls, params: dict[str, Any]) -> ComponentSignature:
         taps = [
-            TapSpec(name="gate_i", source="cells", spec=PortSpec(name="gate_i", kind="tensor", rank=[3], layout="BLD")),
-            TapSpec(name="gate_f", source="cells", spec=PortSpec(name="gate_f", kind="tensor", rank=[3], layout="BLD")),
-            TapSpec(name="gate_o", source="cells", spec=PortSpec(name="gate_o", kind="tensor", rank=[3], layout="BLD")),
-            TapSpec(name="cell_state", source="cells", spec=PortSpec(name="cell_state", kind="tensor", rank=[3], layout="BLD")),
-            TapSpec(name="hidden_states", source="cells", spec=PortSpec(name="hidden_states", kind="tensor", rank=[3], layout="BLD")),
+            TapSpec(name="gate_i", source="cells", spec=PortSpec(name="gate_i", title="输入门", description="逐时间步输入门激活值，形状 BLD", kind="tensor", rank=[3], layout="BLD")),
+            TapSpec(name="gate_f", source="cells", spec=PortSpec(name="gate_f", title="遗忘门", description="逐时间步遗忘门激活值，形状 BLD", kind="tensor", rank=[3], layout="BLD")),
+            TapSpec(name="gate_o", source="cells", spec=PortSpec(name="gate_o", title="输出门", description="逐时间步输出门激活值，形状 BLD", kind="tensor", rank=[3], layout="BLD")),
+            TapSpec(name="cell_state", source="cells", spec=PortSpec(name="cell_state", title="细胞状态", description="逐时间步记忆单元 c，形状 BLD", kind="tensor", rank=[3], layout="BLD")),
+            TapSpec(name="hidden_states", source="cells", spec=PortSpec(name="hidden_states", title="隐状态序列", description="逐时间步隐状态 h，形状 BLD", kind="tensor", rank=[3], layout="BLD")),
         ]
         return ComponentSignature(
-            inputs=[PortSpec(name="x", kind="tensor", rank=[3], layout="BLD")],
+            inputs=[
+                PortSpec(name="x", title="序列输入", description="BLD 序列，可带 mask 跳过填充步", kind="tensor", rank=[3], layout="BLD"),
+            ],
             outputs=[
-                PortSpec(name="out", kind="tensor", rank=[3], layout="BLD"),
-                PortSpec(name="last_h", kind="tensor", rank=[2], layout="BD"),
-                PortSpec(name="last_c", kind="tensor", rank=[2], layout="BD"),
+                PortSpec(name="out", title="隐状态序列", description="每个时间步的隐状态，形状 BLD", kind="tensor", rank=[3], layout="BLD"),
+                PortSpec(name="last_h", title="末步隐状态", description="最后一个有效步的 h，形状 BD", kind="tensor", rank=[2], layout="BD"),
+                PortSpec(name="last_c", title="末步细胞状态", description="最后一个有效步的 c，形状 BD", kind="tensor", rank=[2], layout="BD"),
             ],
             taps=taps,
         )

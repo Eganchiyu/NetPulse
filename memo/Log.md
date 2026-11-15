@@ -61,3 +61,17 @@
   - `lstm`（`backbones.py`）：基于步进 `LSTMCell` 的可观测门控 LSTM，支持变长 Mask 状态冻结、`last_h/last_c` 输出及 `gate_i/gate_f/gate_o/cell_state/hidden_states` 抽头。
 - 新增 3 个专属可视化分析探针（`outputs.py` + `webui/index.html` Canvas 渲染）：`gate_dynamics`（多门控时序曲线 + 神经元条带热图 + 饱和率）、`hidden_trajectory`（PCA/first2 2D 相空间演化轨迹）、`step_energy`（时间步响应 L2 能量与步间跃迁）。
 - 新增示例工作流 `examples/lstm_seq_observatory.json` 与测试 `tests/test_lstm_and_probes.py`，`pytest tests -v` 20/20 全部通过。
+
+## 2026-11-15（工作流文件导入导出、模板库与 LSTM 经典时序预测案例）
+- 新增元件适配回归预测：`sources.py` 扩展 `_SourceModule`（支持 `y_dtype`/`y_layout`）并新增 `seq_forecast_data`（`sine_mix` / `damped_osc` / `ar_trend` 滑窗时间序列回归数据源）；`losses.py` 新增 `mse_loss`（支持 ERC `expected_input_spec` 形状对齐检查）；`trainer.py` 适配多维 `y` 的 `BD` 布局推导。
+- 新增 `templates/` 模板目录（5 个经典模板：`01_spiral_mlp.json`、`02_mnist_cnn_atomic.json`、`03_mnist_resnet_bridge.json`、`04_seq_mnist_lstm.json`、`05_lstm_time_series_forecast.json`）与经典案例 `examples/lstm_forecast_classic.json`（`seq_forecast_data -> lstm -> layer_norm -> mlp_block -> mse_loss` + 门控/相空间/步能量/标量探针）。
+- WebUI 文件与模板管理：`server.py` 与 `cli.py` 新增 `--templates-dir`、`/api/templates`、`/api/template`、`/api/graph/delete`、`/api/graph/import`、`/api/graph/export`；`index.html` 新增“新建”、“模板”弹窗、“导入”（含拖放 `.json`/`.yaml` 文件）、“导出”（JSON/YAML 下载）与“删除”功能。
+- 验证通过：`pytest tests -v` 22/22 全部通过。
+
+## 2026-11-16（元件中文元数据、可编辑性与文字排版）
+- 元件元数据中文化：`types.py` 的 `PortSpec` 新增 `title`（中文含义）/`description`（端口简介）；`component.py` 的 `BaseComponent` 新增 `title`（中文译名）。30 个内置元件的 `declare_ports` 全部补齐端口中文名与说明，`registry.describe_component` 导出 `title` 及各端口 `title/description`（插件新元件同样生效）。
+- 节点可编辑性：`NodeIR` 新增 `label`（自定义显示名），`serialize_graph_ir` 透传 `title/label`；画布节点卡片新增 ✎ 重命名与 ⚙ 展开内联「快速参数编辑」面板（保持展开状态、改动即触发 ERC）。
+- 参数表单增强：抽出共用 `paramFieldHtml / bindParamForm`，支持逐项「恢复默认值」、数值范围与 JSON 语法校验提示、JSON 改多行文本域。
+- 检查器改版：新增元件信息卡（中文名/英文名/类别/简介）、端口说明表（中文含义+英文端口名+布局+实时 shape）、参数分卡排版；连线检查器显示源/宿端口中文名。
+- 文字视觉：统一中文标签（`.zh-name/.en-name/.hint-text/.pf-*`），元件库/节点卡/表格字号与行高重排，节点卡简介两行截断。
+- 验证：`pytest tests -q` 22/22 通过；jsdom 冒烟测试（元件库、节点渲染、LSTM 抽头、改名、快速参数、校验与重置、连线检查器）无 JS 报错。

@@ -15,6 +15,8 @@ class NodeIR(BaseModel):
     type: str
     params: dict[str, Any] = Field(default_factory=dict)
     position: Optional[dict[str, float]] = None
+    # 用户自定义显示标签（留空则用元件中文名）
+    label: Optional[str] = None
 
 
 class EdgeIR(BaseModel):

@@ -138,6 +138,8 @@ def serialize_graph_ir(
             "id": node.id,
             "type": node.type,
             "display_name": (cls.display_name or node.type) if cls else node.type,
+            "title": ((cls.title or cls.display_name) if cls else node.type),
+            "label": node.label,
             "category": cls.category if cls else "unknown",
             "params": node.params,
             "position": positions[node.id],

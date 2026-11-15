@@ -67,6 +67,7 @@ class SpiralData(BaseComponent):
 
     category = "source"
     display_name = "Spiral Data"
+    title = "螺旋数据源"
     description = "2D 螺旋多分类合成数据源（秒开，适合快速实验）"
 
     @classmethod
@@ -82,8 +83,8 @@ class SpiralData(BaseComponent):
         return ComponentSignature(
             inputs=[],
             outputs=[
-                PortSpec(name="x", kind="tensor", rank=[2], layout="BD", dtype="float32"),
-                PortSpec(name="y", kind="tensor", rank=[1], layout="B", dtype="int64"),
+                PortSpec(name="x", title="特征坐标", description="每行一个二维点 (x1, x2)，形状 BD", kind="tensor", rank=[2], layout="BD", dtype="float32"),
+                PortSpec(name="y", title="类别标签", description="整型类别索引，形状 B", kind="tensor", rank=[1], layout="B", dtype="int64"),
             ],
         )
 
@@ -185,6 +186,7 @@ class MNISTData(BaseComponent):
 
     category = "source"
     display_name = "MNIST Data"
+    title = "MNIST 手写数字"
     description = "手写数字数据集（1×28×28 灰度图，10 分类）"
 
     @classmethod
@@ -200,8 +202,8 @@ class MNISTData(BaseComponent):
         return ComponentSignature(
             inputs=[],
             outputs=[
-                PortSpec(name="x", kind="tensor", rank=[4], layout="BCHW", dtype="float32"),
-                PortSpec(name="y", kind="tensor", rank=[1], layout="B", dtype="int64"),
+                PortSpec(name="x", title="图像批", description="28×28 灰度图，形状 BCHW，已归一化", kind="tensor", rank=[4], layout="BCHW", dtype="float32"),
+                PortSpec(name="y", title="数字标签", description="0~9 整型标签，形状 B", kind="tensor", rank=[1], layout="B", dtype="int64"),
             ],
         )
 
@@ -252,6 +254,7 @@ class SeqWaveData(BaseComponent):
 
     category = "source"
     display_name = "SeqWave Data"
+    title = "序列波形数据源"
     description = "合成多维序列分类数据源（波形模式 / 记忆线索，支持变长 Mask）"
 
     @classmethod
@@ -277,8 +280,8 @@ class SeqWaveData(BaseComponent):
         return ComponentSignature(
             inputs=[],
             outputs=[
-                PortSpec(name="x", kind="tensor", rank=[3], layout="BLD", dtype="float32"),
-                PortSpec(name="y", kind="tensor", rank=[1], layout="B", dtype="int64"),
+                PortSpec(name="x", title="序列输入", description="波形/记忆线索输入，形状 BLD，附带变长 mask", kind="tensor", rank=[3], layout="BLD", dtype="float32"),
+                PortSpec(name="y", title="类别标签", description="整型类别索引，形状 B", kind="tensor", rank=[1], layout="B", dtype="int64"),
             ],
         )
 
@@ -362,6 +365,7 @@ class SeqForecastData(BaseComponent):
 
     category = "source"
     display_name = "SeqForecast Data"
+    title = "时序预测数据源"
     description = "时间序列滑窗预测数据源（x 为历史窗口 BLD，y 为未来 horizon 步真值 BD）"
 
     @classmethod
@@ -386,8 +390,8 @@ class SeqForecastData(BaseComponent):
         return ComponentSignature(
             inputs=[],
             outputs=[
-                PortSpec(name="x", kind="tensor", rank=[3], layout="BLD", dtype="float32"),
-                PortSpec(name="y", kind="tensor", rank=[2], layout="BD", dtype="float32"),
+                PortSpec(name="x", title="历史窗口", description="过去若干步观测值，形状 BLD", kind="tensor", rank=[3], layout="BLD", dtype="float32"),
+                PortSpec(name="y", title="未来真值", description="未来 horizon 步目标值，形状 BD", kind="tensor", rank=[2], layout="BD", dtype="float32"),
             ],
         )
 
