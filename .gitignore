@@ -12,7 +12,7 @@ eggs/
 *.egg-info/
 .installed.cfg
 *.egg
-
+reference_comfyui/
 # Virtual environments
 .venv/
 venv/
