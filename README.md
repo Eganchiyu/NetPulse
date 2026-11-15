@@ -13,24 +13,33 @@
 - **隐层抽头（Tap）与多目标正则化**：
   - 通过约定返回（`forward_with_taps`）或 PyTorch `register_forward_hook` 无侵入抽取任意隐藏层输出至 `tap_bus`。
   - Loss 与正则项节点（如 `cross_entropy_loss`、`activation_reg_loss` 的 `l1`/`l2`/`orthogonal` 模式）与网络层平级连线，统一加权反传。
-- **双粒度元件库（17 个内置元件）与统一初始化**：
-  - **数据源 (`source`)**：`spiral_data`、`mnist_data`（纯 PyTorch 加载与缓存，无需 `torchvision`）。
-  - **原子层 (`backbone`/`op`)**：`conv2d`、`pool2d`、`linear`、`activation`、`batch_norm2d`、`layer_norm`、`dropout`（支持 `kaiming` / `xavier` / `orthogonal` / `normal` / `constant` 等权重与偏置初始化）。
-  - **宏模块 (`backbone`)**：`cnn_block`、`mlp_block`。
-  - **算子与桥接 (`op`/`bridge`)**：`flatten`、`global_avg_pool`、`matrix_bridge`、`tensor_add`。
-  - **目标 (`loss`)**：`cross_entropy_loss`、`activation_reg_loss`。
+- **双粒度元件库（30 个内置元件）与统一初始化**：
+  - **数据源 (`source`，4)**：`spiral_data`、`mnist_data`（纯 PyTorch 加载与缓存，无需 `torchvision`）、`seq_wave_data`（波形/记忆线索序列，变长 `mask`）、`seq_forecast_data`（滑窗时序回归，`sine_mix` / `damped_osc` / `ar_trend`）。
+  - **主干与原子层 (`backbone`，5 / `op`，10)**：`conv2d`、`pool2d`、`linear`、`activation`、`batch_norm2d`、`layer_norm`、`dropout`（支持 `kaiming` / `xavier` / `orthogonal` / `normal` / `constant` 等权重与偏置初始化）、`cnn_block`、`mlp_block`、`lstm`（步进 `LSTMCell`，Mask 感知）。
+  - **算子与桥接 (`op` / `bridge`)**：`flatten`、`global_avg_pool`、`image_to_seq`、`seq_pool`、`tensor_add`、`matrix_bridge`。
+  - **目标 (`loss`，3)**：`cross_entropy_loss`、`activation_reg_loss`（`l1` / `l2` / `orthogonal`）、`mse_loss`。
+  - **可视化探针 (`output`，7)**：`monitor`、`scalar_watch`、`heatmap_preview`、`tensor_peek`、`gate_dynamics`、`hidden_trajectory`、`step_energy`（零梯度旁路，训练中实时渲染）。
   - 支持在 `plugins/*.py` 或 `plugins/*/__init__.py` 中通过 `@register_component` 热加载自定义元件（支持单插件错误隔离）。
-- **外挂交互式 WebUI**：基于 `aiohttp` + WebSocket 的零构建单页节点编辑 IDE，支持元件库拖放/双击画布快速建点、端口拖拽连线与实时 ERC/AutoBridge 校验、动态参数表单编辑、撤销重做、保存/另存为、Minimap 小地图、动态调节步进延迟观察张量流动脉冲与实时分项 Loss 曲线。
+- **元件自带中文元数据（Schema 内声明，UI 零映射表）**：
+  - `BaseComponent.title` 声明中文译名、`description` 声明中文简介；`PortSpec.title` / `PortSpec.description` 声明每个输入/输出/Tap 端口的**中文含义**与**简单介绍**。
+  - `registry.describe_component()` 将上述元数据随 `/api/components` 一起下发（插件元件同样适用），WebUI 直接消费，无需前端硬编码名称表。
+  - 节点可通过 `NodeIR.label` 自定义显示名，随 `GraphIR` 保存与往返。
+- **外挂交互式 WebUI**：基于 `aiohttp` + WebSocket 的零构建单页节点编辑 IDE，支持元件库拖放/双击画布快速建点、端口拖拽连线与实时 ERC/AutoBridge 校验、动态参数表单编辑、撤销重做、保存/另存为、工程文件导入导出、模板库、Minimap 小地图、动态调节步进延迟观察张量流动脉冲与实时分项 Loss 曲线。
+- **中文优先的元件说明与可视排版**：
+  - 元件库按「中文名 + 英文名 + 两句简介」呈现，支持中文关键词搜索。
+  - 画布节点卡显示中文标题（或自定义标签）、元件简介与**中文端口标签**，悬停提示英文端口名、布局与端口说明。
+  - 属性面板含元件信息卡（中文名/英文名/类别/简介）与端口说明表（中文含义 + 英文端口名 + 布局 + 实时 `shape`）。
 
 ## 目录结构
 
 ```text
 netpulse/
-├── core/           # Signal / PortSpec / ParamSpec / GraphIR / Registry / ERC / GraphCompiler / Trainer
-├── components/     # 内置双粒度元件库（含参数 Schema）与统一初始化工具
-├── webui/          # 外挂可视化与交互编辑服务端 (aiohttp + WS) 与单文件前端
+├── core/           # Signal / PortSpec(title, description) / ParamSpec / GraphIR / Registry / ERC / GraphCompiler / Trainer
+├── components/     # 内置 30 个元件（含参数 Schema、端口中文元数据）与统一初始化工具
+├── webui/          # 外挂可视化与交互编辑服务端 (aiohttp + WS) 与单文件前端 index.html
 └── cli.py          # 命令行入口 (list / check / train / serve)
-examples/           # 示例计算图 (spiral_quickstart / mnist_tap_reg / mnist_atomic)
+templates/          # 内置经典工作流模板 (01_spiral_mlp … 05_lstm_time_series_forecast)
+examples/           # 示例计算图 (spiral_quickstart / mnist_atomic / mnist_tap_reg / lstm_forecast_classic …)
 tests/              # 单元测试与端到端训练 / WebUI 测试
 docs/               # 架构设计文档 (design.md) 与系统交接文档 (ARCHITECTURE.md)
 ```
@@ -73,12 +82,15 @@ python -m netpulse.cli serve --host 127.0.0.1 --port 8765
 - `--host`：监听地址（默认 `127.0.0.1`）
 - `--port`：监听端口（默认 `8765`）
 - `--graphs-dir`：计算图目录，保存与加载均限定在该目录下（默认 `examples`）
+- `--templates-dir`：工作流模板目录（默认 `templates`）
 - `--plugins`：自定义插件目录（默认 `plugins`）
 
 WebUI 常用操作：
 - **添加节点**：从左侧元件库点击/拖入画布，或**双击画布空白处**打开快速搜索框回车创建。
 - **拖拽连线**：从右侧 `output` 或金色 `tap` 端口圆点按住拖至目标节点左侧 `input` 端口释放，连线时自动触发 ERC 静态校验与 AutoBridge 推导。
-- **编辑参数与连接**：点击节点/连线在右侧 **属性编辑** 面板修改参数、权重或 `AutoBridge` 策略；支持 `Delete/Backspace` 删除选中项、`Ctrl+Z`/`Ctrl+Y` 撤销重做、`Ctrl+S` 保存。
+- **画布内直接编辑元件**：节点标题右侧 **✎** 可重命名显示标签（不影响节点 id 与连线）；**⚙** 展开节点内联「快速参数编辑」面板，改值即触发 ERC 重算，无需切换到属性面板。
+- **编辑参数与连接**：点击节点/连线在右侧 **属性编辑** 面板修改参数、权重或 `AutoBridge` 策略；每个参数项可 **↺ 恢复默认值**，数值越界或 JSON 格式错误会就地标红提示；同时可查看该元件的**中文简介**与**每个端口的中文含义与说明**（含布局与实时 `shape`）。支持 `Delete/Backspace` 删除选中项、`Ctrl+Z`/`Ctrl+Y` 撤销重做、`Ctrl+S` 保存。
+- **模板与文件**：顶部 **新建 / 模板 / 导入 / 导出 / 另存为 / 删除** 管理工程文件；模板库内置 `01_spiral_mlp` 至 `05_lstm_time_series_forecast` 五个经典工作流。
 - **直接训练未保存图**：编辑后无需先落盘，点击 **开始训练** 即可直接提交当前画布图运行，并在 **训练遥测 & ERC** 面板实时调速观察 Loss 曲线与张量脉冲。
 
 ### 3. CLI 检查与训练命令
