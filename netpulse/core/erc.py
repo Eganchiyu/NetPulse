@@ -12,6 +12,7 @@ import torch.nn as nn
 from netpulse.core.component import BaseComponent
 from netpulse.core.ir import EdgeIR, GraphIR, NodeIR
 from netpulse.core.registry import ComponentRegistry
+from netpulse.core.subgraph import ExpandedGraph, expand_graph, has_subgraphs
 from netpulse.core.types import (
     ComponentSignature,
     Diagnostic,
@@ -28,6 +29,39 @@ class AutoBridgePlan:
     edge_id: str
     src_spec: ResolvedSpec
     dst_spec: ResolvedSpec
+    module_type: str = "Linear"
+    in_dim: int = 0
+    out_dim: int = 0
+    param_count: int = 0
+    weight_init: Any = None
+    bias_init: Any = None
+
+
+def _build_autobridge_plan(
+    edge: EdgeIR,
+    src_spec: ResolvedSpec,
+    dst_spec: ResolvedSpec,
+) -> AutoBridgePlan:
+    if src_spec.layout == "BCHW" and src_spec.rank == 4:
+        in_dim = int(src_spec.shape[1])
+        out_dim = int(dst_spec.shape[1])
+        mod_type = "Conv2d(1x1)"
+    else:
+        in_dim = int(src_spec.shape[-1])
+        out_dim = int(dst_spec.shape[-1])
+        mod_type = "Linear"
+    param_count = in_dim * out_dim + out_dim
+    return AutoBridgePlan(
+        edge_id=edge.id,
+        src_spec=src_spec,
+        dst_spec=dst_spec,
+        module_type=mod_type,
+        in_dim=in_dim,
+        out_dim=out_dim,
+        param_count=param_count,
+        weight_init=edge.bridge_init,
+        bias_init=edge.bridge_bias_init,
+    )
 
 
 @dataclass
@@ -42,6 +76,8 @@ class ERCResult:
     node_out_specs: dict[str, dict[str, ResolvedSpec]] = field(default_factory=dict)
     node_tap_specs: dict[str, dict[str, ResolvedSpec]] = field(default_factory=dict)
     auto_bridges: dict[str, AutoBridgePlan] = field(default_factory=dict)
+    expanded_graph: Optional[GraphIR] = None
+    expanded_info: Optional[ExpandedGraph] = None
 
     def errors(self) -> list[Diagnostic]:
         return [d for d in self.diagnostics if d.level == "error"]
@@ -175,10 +211,14 @@ def _run_meta_node(
     in_specs: dict[str, ResolvedSpec],
     used_taps: set[str],
     sig: ComponentSignature,
+    trainer_batch_size: Optional[int] = None,
 ) -> tuple[dict[str, ResolvedSpec], dict[str, ResolvedSpec]]:
     """在 PyTorch meta device 上零显存执行单节点前向，提取输出与 Tap 形状。"""
+    params = node.params
+    if comp.category == "source" and trainer_batch_size is not None and "meta_batch_size" not in params:
+        params = {**params, "meta_batch_size": max(1, int(trainer_batch_size))}
     with torch.device("meta"):
-        module: nn.Module = comp.build(node.params, in_specs)
+        module: nn.Module = comp.build(params, in_specs)
 
     meta_inputs: dict[str, Signal] = {}
     for pname, rspec in in_specs.items():
@@ -254,8 +294,22 @@ def _run_meta_node(
 
 
 def run_erc(graph: GraphIR, registry: ComponentRegistry) -> ERCResult:
-    """对 GraphIR 执行完整 ERC 检查与 Meta 形状推导。"""
+    """对 GraphIR 执行完整 ERC 检查与 Meta 形状推导（含子图递归展开）。"""
     diagnostics: list[Diagnostic] = []
+    exp: Optional[ExpandedGraph] = None
+    if has_subgraphs(graph):
+        exp = expand_graph(graph)
+        diagnostics.extend(exp.diagnostics)
+        graph = exp.graph
+        if exp.has_errors:
+            return ERCResult(
+                passed=False,
+                topo_order=[],
+                diagnostics=diagnostics,
+                expanded_graph=graph,
+                expanded_info=exp,
+            )
+
     node_map: dict[str, NodeIR] = {}
 
     for n in graph.nodes:
@@ -272,7 +326,13 @@ def run_erc(graph: GraphIR, registry: ComponentRegistry) -> ERCResult:
         node_map[n.id] = n
 
     if any(d.level == "error" for d in diagnostics):
-        return ERCResult(passed=False, topo_order=[], diagnostics=diagnostics)
+        return ERCResult(
+            passed=False,
+            topo_order=[],
+            diagnostics=diagnostics,
+            expanded_graph=graph if exp is not None else None,
+            expanded_info=exp,
+        )
 
     signatures: dict[str, ComponentSignature] = {}
     components: dict[str, BaseComponent] = {}
@@ -293,7 +353,13 @@ def run_erc(graph: GraphIR, registry: ComponentRegistry) -> ERCResult:
             )
 
     if any(d.level == "error" for d in diagnostics):
-        return ERCResult(passed=False, topo_order=[], diagnostics=diagnostics)
+        return ERCResult(
+            passed=False,
+            topo_order=[],
+            diagnostics=diagnostics,
+            expanded_graph=graph if exp is not None else None,
+            expanded_info=exp,
+        )
 
     # 校验边与端口合法性
     incoming_by_port: dict[tuple[str, str], list[EdgeIR]] = defaultdict(list)
@@ -481,7 +547,14 @@ def run_erc(graph: GraphIR, registry: ComponentRegistry) -> ERCResult:
         )
 
     if any(d.level == "error" for d in diagnostics):
-        return ERCResult(passed=False, topo_order=topo_order, diagnostics=diagnostics, signatures=signatures)
+        return ERCResult(
+            passed=False,
+            topo_order=topo_order,
+            diagnostics=diagnostics,
+            signatures=signatures,
+            expanded_graph=graph if exp is not None else None,
+            expanded_info=exp,
+        )
 
     # Meta 形状推导
     node_in_specs: dict[str, dict[str, ResolvedSpec]] = {}
@@ -525,11 +598,7 @@ def run_erc(graph: GraphIR, registry: ComponentRegistry) -> ERCResult:
             if expected is not None and expected.shape != src_spec.shape:
                 if _can_autobridge(src_spec, expected):
                     if edge.bridge == "auto":
-                        auto_bridges[edge.id] = AutoBridgePlan(
-                            edge_id=edge.id,
-                            src_spec=src_spec,
-                            dst_spec=expected,
-                        )
+                        auto_bridges[edge.id] = _build_autobridge_plan(edge, src_spec, expected)
                         diagnostics.append(
                             Diagnostic(
                                 level="info",
@@ -581,6 +650,7 @@ def run_erc(graph: GraphIR, registry: ComponentRegistry) -> ERCResult:
                 in_specs=resolved_in,
                 used_taps=used_taps_by_node.get(nid, set()),
                 sig=sig,
+                trainer_batch_size=graph.trainer.batch_size,
             )
             node_out_specs[nid] = out_specs
             node_tap_specs[nid] = tap_specs
@@ -594,6 +664,34 @@ def run_erc(graph: GraphIR, registry: ComponentRegistry) -> ERCResult:
                 )
             )
 
+    # 批次契约检查：小批次（batch_size < 2）下 BatchNorm2d 与 orthogonal 正则的风险
+    if graph.trainer.batch_size < 2:
+        for nid, node in node_map.items():
+            if node.type == "batch_norm2d":
+                diagnostics.append(
+                    Diagnostic(
+                        level="error",
+                        code="BATCH_SIZE_TOO_SMALL_FOR_BN",
+                        node_id=nid,
+                        message=(
+                            f"BatchNorm2d 节点 '{nid}' 在训练模式下要求 batch_size >= 2，"
+                            f"当前 trainer.batch_size={graph.trainer.batch_size}"
+                        ),
+                    )
+                )
+            elif node.type == "activation_reg_loss" and str(node.params.get("mode", "l1")).lower() == "orthogonal":
+                diagnostics.append(
+                    Diagnostic(
+                        level="warning",
+                        code="DEGENERATE_ORTHOGONAL_REG_BS1",
+                        node_id=nid,
+                        message=(
+                            f"激活正则节点 '{nid}' 使用 orthogonal 模式但 trainer.batch_size="
+                            f"{graph.trainer.batch_size}，批次中心化将退化为零张量"
+                        ),
+                    )
+                )
+
     passed = not any(d.level == "error" for d in diagnostics)
     return ERCResult(
         passed=passed,
@@ -604,4 +702,6 @@ def run_erc(graph: GraphIR, registry: ComponentRegistry) -> ERCResult:
         node_out_specs=node_out_specs,
         node_tap_specs=node_tap_specs,
         auto_bridges=auto_bridges,
+        expanded_graph=graph if exp is not None else None,
+        expanded_info=exp,
     )

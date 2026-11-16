@@ -92,7 +92,7 @@ class SpiralData(BaseComponent):
         num_classes = int(params.get("num_classes", 3))
         points_per_class = int(params.get("points_per_class", 200))
         noise = float(params.get("noise", 0.15))
-        batch_hint = int(params.get("meta_batch_size", 32))
+        batch_hint = int(params.get("meta_batch_size", 64))
 
         def _factory(batch_size: int, seed: int):
             g = torch.Generator().manual_seed(seed)
@@ -293,7 +293,7 @@ class SeqWaveData(BaseComponent):
         num_samples = int(params.get("num_samples", 600))
         variable_length = bool(params.get("variable_length", True))
         noise = float(params.get("noise", 0.12))
-        batch_hint = int(params.get("meta_batch_size", 32))
+        batch_hint = int(params.get("meta_batch_size", 64))
 
         def _factory(batch_size: int, seed: int):
             g = torch.Generator().manual_seed(seed)
@@ -402,7 +402,7 @@ class SeqForecastData(BaseComponent):
         feat_dim = int(params.get("feat_dim", 3))
         num_samples = int(params.get("num_samples", 800))
         noise = float(params.get("noise", 0.05))
-        batch_hint = int(params.get("meta_batch_size", 32))
+        batch_hint = int(params.get("meta_batch_size", 64))
 
         def _factory(batch_size: int, seed: int):
             g = torch.Generator().manual_seed(seed)

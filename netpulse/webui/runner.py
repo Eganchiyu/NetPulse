@@ -13,7 +13,12 @@ import torch.nn as nn
 from netpulse.core.compiler import CompiledGraph, GraphCompiler
 from netpulse.core.ir import GraphIR
 from netpulse.core.registry import ComponentRegistry
-from netpulse.core.trainer import _build_optimizer, _extract_acc, _to_signal_batch
+from netpulse.core.trainer import (
+    _build_optimizer,
+    _extract_acc,
+    build_source_loaders,
+    merge_source_batches,
+)
 
 
 def _tensor_summary(t: torch.Tensor) -> dict[str, Any]:
@@ -115,11 +120,8 @@ class LiveTrainRunner:
             device = torch.device(tcfg.device)
             compiled.to(device)
 
-            sources = [nid for nid, cat in compiled.categories.items() if cat == "source"]
-            if len(sources) != 1:
-                raise ValueError(f"当前仅支持 1 个 source 节点，发现: {sources}")
-            source_id = sources[0]
-            train_loader, val_loader = compiled.nodes_mod[source_id].build_dataloaders(
+            source_ids, train_loaders, val_loaders = build_source_loaders(
+                compiled,
                 batch_size=tcfg.batch_size,
                 seed=tcfg.seed,
             )
@@ -134,19 +136,21 @@ class LiveTrainRunner:
 
             step = 0
             last_emit_ts = 0.0
-            total_steps_est = tcfg.epochs * max(1, len(train_loader))
+            loader_lens = [len(ld) for ld in train_loaders if hasattr(ld, "__len__")]
+            steps_per_epoch = min(loader_lens) if loader_lens else 1
+            total_steps_est = tcfg.epochs * max(1, steps_per_epoch)
 
             for epoch in range(tcfg.epochs):
                 if self._stop_flag.is_set():
                     break
                 compiled.train()
-                for raw_batch in train_loader:
+                for raw_batches in zip(*train_loaders):
                     while self._pause_flag.is_set() and not self._stop_flag.is_set():
                         time.sleep(0.05)
                     if self._stop_flag.is_set():
                         break
 
-                    batch = _to_signal_batch(source_id, raw_batch, device)
+                    batch = merge_source_batches(source_ids, raw_batches, device)
                     optimizer.zero_grad()
                     out = compiled(batch, mode="train")
                     if out.total_loss is None:
@@ -177,10 +181,60 @@ class LiveTrainRunner:
                         for tkey, tsig in out.tap_bus.items():
                             tap_stats[tkey] = _tensor_summary(tsig.data)
 
+                        # 若有折叠子图，将展开后的内部端口遥测映射回外层子图节点
+                        exp_info = compiled.erc_result.expanded_info
+                        if exp_info is not None:
+                            for sg_id, port_groups in exp_info.outer_port_targets.items():
+                                sg_ports: dict[str, Any] = {}
+                                for pname, tgt in port_groups.get("outputs", {}).items():
+                                    flat_nid, flat_port, kind = tgt[0], tgt[1], tgt[2]
+                                    if kind == "tap":
+                                        st = tap_stats.get(f"{flat_nid}.{flat_port}")
+                                    else:
+                                        st = node_stats.get(flat_nid, {}).get(flat_port)
+                                    if st is not None:
+                                        sg_ports[pname] = st
+                                if not sg_ports:
+                                    for member_id in reversed(exp_info.outer_members.get(sg_id, [])):
+                                        if member_id in node_stats and node_stats[member_id]:
+                                            sg_ports = dict(node_stats[member_id])
+                                            break
+                                if sg_ports:
+                                    node_stats[sg_id] = sg_ports
+                                for tname, tgt in port_groups.get("taps", {}).items():
+                                    flat_nid, flat_port, kind = tgt[0], tgt[1], tgt[2]
+                                    st = (
+                                        tap_stats.get(f"{flat_nid}.{flat_port}")
+                                        if kind == "tap"
+                                        else node_stats.get(flat_nid, {}).get(flat_port)
+                                    )
+                                    if st is not None:
+                                        tap_stats[f"{sg_id}.{tname}"] = st
+
                         # 反向梯度总线（backward 已执行，Hook 已回填）
                         grad_stats: dict[str, Any] = {
                             eid: _tensor_summary(gt) for eid, gt in out.grad_bus.items()
                         }
+
+                        # AutoBridge 参数与梯度统计
+                        bridge_stats: dict[str, Any] = {}
+                        for eid, bmod in compiled.bridges_mod.items():
+                            proj = getattr(bmod, "proj", None)
+                            w = getattr(proj, "weight", None)
+                            if w is not None:
+                                w_sum = _tensor_summary(w)
+                                g_norm = (
+                                    round(float(w.grad.detach().float().norm().item()), 4)
+                                    if w.grad is not None
+                                    else None
+                                )
+                                bridge_stats[eid] = {
+                                    "norm": w_sum["norm"],
+                                    "mean": w_sum["mean"],
+                                    "std": w_sum["std"],
+                                    "grad_norm": g_norm,
+                                    "params": sum(p.numel() for p in bmod.parameters()),
+                                }
 
                         probes: dict[str, Any] = {}
                         for nid, cat in compiled.categories.items():
@@ -193,7 +247,7 @@ class LiveTrainRunner:
                                         probes[nid] = snap
 
                         loss_dict = {k: round(float(v.item()), 5) for k, v in out.loss_dict.items()}
-                        acc_pair = _extract_acc(compiled, out.outputs, batch, source_id)
+                        acc_pair = _extract_acc(compiled, out.outputs, batch, graph_output=out)
                         batch_acc = round(acc_pair[0] / acc_pair[1], 4) if acc_pair else None
 
                         self._emit_cb({
@@ -208,6 +262,7 @@ class LiveTrainRunner:
                             "node_stats": node_stats,
                             "tap_stats": tap_stats,
                             "grad_stats": grad_stats,
+                            "bridge_stats": bridge_stats,
                             "probes": probes,
                             "step_delay_ms": self.step_delay_ms,
                         })
@@ -227,8 +282,8 @@ class LiveTrainRunner:
                     break
 
                 # 每个 epoch 结束做一次快速验证集评估
-                if val_loader is not None:
-                    val_loss, val_acc = self._eval_val(compiled, val_loader, source_id, device)
+                if val_loaders is not None:
+                    val_loss, val_acc = self._eval_val(compiled, val_loaders, source_ids, device)
                     self._emit_cb({
                         "type": "eval",
                         "step": step,
@@ -251,8 +306,8 @@ class LiveTrainRunner:
     def _eval_val(
         self,
         compiled: CompiledGraph,
-        val_loader,
-        source_id: str,
+        val_loaders: list[Any],
+        source_ids: list[str],
         device: torch.device,
     ) -> tuple[float, Optional[float]]:
         compiled.eval()
@@ -260,15 +315,15 @@ class LiveTrainRunner:
         n_batches = 0
         correct = 0
         total_samples = 0
-        for raw_batch in val_loader:
+        for raw_batches in zip(*val_loaders):
             if self._stop_flag.is_set():
                 break
-            batch = _to_signal_batch(source_id, raw_batch, device)
+            batch = merge_source_batches(source_ids, raw_batches, device)
             out = compiled(batch, mode="eval", compute_losses=True)
             if out.total_loss is not None:
                 total_loss += float(out.total_loss.item())
                 n_batches += 1
-            acc_pair = _extract_acc(compiled, out.outputs, batch, source_id)
+            acc_pair = _extract_acc(compiled, out.outputs, batch, graph_output=out)
             if acc_pair is not None:
                 correct += acc_pair[0]
                 total_samples += acc_pair[1]

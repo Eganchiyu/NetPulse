@@ -24,6 +24,10 @@ def test_webui_http_and_ws_flow() -> None:
             assert r_home.status == 200
             assert "NetPulse WebUI" in await r_home.text()
 
+            r_js = await client.get("/static/probe_canvas.js")
+            assert r_js.status == 200
+            assert "drawHeatmapCanvas" in await r_js.text()
+
             r_comps = await client.get("/api/components")
             assert r_comps.status == 200
             comps = (await r_comps.json())["components"]
@@ -185,6 +189,82 @@ def test_webui_templates_api() -> None:
 
             r_bad = await client.get("/api/template", params={"name": "../secret.json"})
             assert r_bad.status == 404
+        finally:
+            await client.close()
+
+    asyncio.run(_run())
+
+
+def test_webui_subgraph_and_autobridge_payload() -> None:
+    async def _run() -> None:
+        app = create_app(graphs_dir="examples", plugins_dir=None)
+        server = TestServer(app)
+        client = TestClient(server)
+        await client.start_server()
+        try:
+            graph_payload = {
+                "name": "webui_sg_ab",
+                "nodes": [
+                    {"id": "src", "type": "spiral_data", "params": {"points_per_class": 30}},
+                    {"id": "grp", "type": "subgraph", "params": {"subgraph_id": "blk"}},
+                    {"id": "head", "type": "linear", "params": {"in_features": 12, "out_features": 3}},
+                    {"id": "ce", "type": "cross_entropy_loss", "params": {}},
+                ],
+                "edges": [
+                    {"id": "e1", "src_node": "src", "src_port": "x", "dst_node": "grp", "dst_port": "x"},
+                    {"id": "e2", "src_node": "grp", "src_port": "out", "dst_node": "head", "dst_port": "x", "bridge": "auto"},
+                    {"id": "e3", "src_node": "head", "src_port": "out", "dst_node": "ce", "dst_port": "logits"},
+                    {"id": "e4", "src_node": "src", "src_port": "y", "dst_node": "ce", "dst_port": "target"},
+                ],
+                "losses": [{"node_id": "ce", "weight": 1.0, "enabled": True}],
+                "trainer": {"batch_size": 16, "epochs": 1, "lr": 0.01},
+                "subgraphs": {
+                    "blk": {
+                        "id": "blk",
+                        "name": "HiddenBlock",
+                        "nodes": [
+                            {"id": "lin", "type": "linear", "params": {"out_features": 8}},
+                            {"id": "act", "type": "activation", "params": {"kind": "relu"}},
+                        ],
+                        "edges": [
+                            {"id": "ie1", "src_node": "lin", "src_port": "out", "dst_node": "act", "dst_port": "x"}
+                        ],
+                        "inputs": [{"port_name": "x", "internal_node": "lin", "internal_port": "x"}],
+                        "outputs": [{"port_name": "out", "internal_node": "act", "internal_port": "out"}],
+                        "taps": [],
+                    }
+                },
+            }
+
+            r_erc = await client.post("/api/erc/check", json={"graph": graph_payload})
+            assert r_erc.status == 200
+            data = await r_erc.json()
+            assert data["erc"]["passed"] is True
+            grp_node = next(n for n in data["nodes"] if n["id"] == "grp")
+            assert grp_node["category"] == "group"
+            assert grp_node["out_specs"]["out"]["shape"] == [16, 8]
+            e2 = next(e for e in data["edges"] if e["id"] == "e2")
+            assert e2["autobridge"]["module_type"] == "Linear"
+            assert e2["autobridge"]["param_count"] == 8 * 12 + 12
+
+            async with client.ws_connect("/ws") as ws:
+                await ws.receive_str(timeout=3)
+                r_start = await client.post(
+                    "/api/train/start",
+                    json={"graph_name": "sg_ab.json", "graph": graph_payload, "step_delay_ms": 10, "epochs": 1},
+                )
+                assert r_start.status == 200
+                saw_step = False
+                for _ in range(30):
+                    msg = json.loads(await ws.receive_str(timeout=5))
+                    if msg["type"] == "step":
+                        saw_step = True
+                        assert "grp" in msg["node_stats"]
+                        assert "e2" in msg["bridge_stats"]
+                        assert msg["bridge_stats"]["e2"]["params"] == 8 * 12 + 12
+                        break
+                assert saw_step
+                await client.post("/api/train/stop")
         finally:
             await client.close()
 

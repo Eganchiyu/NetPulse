@@ -31,6 +31,35 @@ class EdgeIR(BaseModel):
     stop_grad: bool = False
     # 梯度观测：编译期在该边注册反向 Hook，梯度张量写入 CompiledGraph.grad_bus
     watch_grad: bool = False
+    # AutoBridge 权重与偏置初始化策略（传给 init_utils.apply_init）
+    bridge_init: Optional[str | dict[str, Any]] = None
+    bridge_bias_init: Optional[str | dict[str, Any]] = None
+
+
+class SubgraphPortMapping(BaseModel):
+    """子图边界端口映射：将外层端口绑定到内部节点端口或抽头。"""
+
+    port_name: str
+    internal_node: str
+    internal_port: str
+    edge_kind: Literal["signal", "tap"] = "signal"
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
+class SubgraphDef(BaseModel):
+    """可复用的嵌套子图定义（随 GraphIR 保存）。"""
+
+    id: str
+    name: str = "Subgraph"
+    title: Optional[str] = None
+    description: Optional[str] = None
+    nodes: list[NodeIR] = Field(default_factory=list)
+    edges: list[EdgeIR] = Field(default_factory=list)
+    losses: list[LossConfig] = Field(default_factory=list)
+    inputs: list[SubgraphPortMapping] = Field(default_factory=list)
+    outputs: list[SubgraphPortMapping] = Field(default_factory=list)
+    taps: list[SubgraphPortMapping] = Field(default_factory=list)
 
 
 class LossConfig(BaseModel):
@@ -59,6 +88,7 @@ class GraphIR(BaseModel):
     edges: list[EdgeIR]
     losses: list[LossConfig] = Field(default_factory=list)
     trainer: TrainerConfig = Field(default_factory=TrainerConfig)
+    subgraphs: dict[str, SubgraphDef] = Field(default_factory=dict)
 
     @classmethod
     def from_file(cls, path: str | Path) -> "GraphIR":

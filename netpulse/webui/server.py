@@ -7,7 +7,7 @@ import ipaddress
 import json
 import logging
 import urllib.parse
-from collections import defaultdict
+from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any, Optional
 
@@ -69,7 +69,28 @@ def _create_origin_only_middleware():
 def _compute_auto_layout(graph: GraphIR, topo_order: list[str], force_auto: bool = False) -> dict[str, dict[str, float]]:
     """根据拓扑层级计算清晰的左->右 DAG 节点坐标。"""
     node_map = {n.id: n for n in graph.nodes}
-    order = topo_order if len(topo_order) == len(graph.nodes) else [n.id for n in graph.nodes]
+    if len(topo_order) == len(graph.nodes) and all(nid in node_map for nid in topo_order):
+        order = topo_order
+    else:
+        # 存在子图节点时，针对外层视图图单独计算拓扑顺序
+        indeg = {n.id: 0 for n in graph.nodes}
+        children: dict[str, list[str]] = defaultdict(list)
+        for e in graph.edges:
+            if e.src_node in node_map and e.dst_node in node_map:
+                children[e.src_node].append(e.dst_node)
+                indeg[e.dst_node] += 1
+        q = deque([nid for nid, d in indeg.items() if d == 0])
+        order = []
+        while q:
+            curr = q.popleft()
+            order.append(curr)
+            for nxt in children[curr]:
+                indeg[nxt] -= 1
+                if indeg[nxt] == 0:
+                    q.append(nxt)
+        for n in graph.nodes:
+            if n.id not in order:
+                order.append(n.id)
 
     parents: dict[str, list[str]] = defaultdict(list)
     for e in graph.edges:
@@ -107,15 +128,111 @@ def serialize_graph_ir(
     reg: ComponentRegistry,
     file_name: str = "unsaved.json",
     force_auto_layout: bool = False,
+    view_subgraph_path: Optional[list[str]] = None,
 ) -> dict[str, Any]:
-    """对任意 GraphIR 运行 ERC 并序列化为 WebUI 载荷。"""
+    """对任意 GraphIR 运行 ERC 并序列化为 WebUI 载荷（支持按路径下钻序列化子图视图）。"""
     erc = run_erc(graph, reg)
-    positions = _compute_auto_layout(graph, erc.topo_order, force_auto=force_auto_layout)
+    exp_info = erc.expanded_info
+    flat_to_outer = exp_info.flat_to_outer if exp_info else {}
+    outer_targets = exp_info.outer_port_targets if exp_info else {}
+
+    view_graph = graph
+    prefix = ""
+    active_sub_id: Optional[str] = None
+    if view_subgraph_path:
+        curr_nodes = graph.nodes
+        for seg in view_subgraph_path:
+            found = next((n for n in curr_nodes if n.id == seg and n.type == "subgraph"), None)
+            if found is None:
+                break
+            sg_id = str((found.params or {}).get("subgraph_id", "")).strip()
+            sdef = graph.subgraphs.get(sg_id)
+            if sdef is None:
+                break
+            prefix += f"{seg}/"
+            active_sub_id = sg_id
+            curr_nodes = sdef.nodes
+            view_graph = GraphIR(
+                name=sdef.name,
+                nodes=sdef.nodes,
+                edges=sdef.edges,
+                losses=sdef.losses,
+                trainer=graph.trainer,
+                subgraphs=graph.subgraphs,
+            )
+
+    positions = _compute_auto_layout(view_graph, erc.topo_order, force_auto=force_auto_layout)
+
+    node_out_specs_view: dict[str, dict[str, dict[str, Any]]] = {}
+    node_tap_specs_view: dict[str, dict[str, dict[str, Any]]] = {}
 
     nodes_payload = []
-    for node in graph.nodes:
+    for node in view_graph.nodes:
+        flat_nid = f"{prefix}{node.id}"
+        if node.type == "subgraph":
+            sg_id = str((node.params or {}).get("subgraph_id", "")).strip()
+            sdef = graph.subgraphs.get(sg_id)
+            targets = outer_targets.get(flat_nid, {"inputs": {}, "outputs": {}, "taps": {}}) if not prefix else {"inputs": {}, "outputs": {}, "taps": {}}
+
+            in_specs: dict[str, dict[str, Any]] = {}
+            for pname, tgt in targets.get("inputs", {}).items():
+                t_nid, t_port = tgt[0], tgt[1]
+                sp = erc.node_in_specs.get(t_nid, {}).get(t_port)
+                if sp:
+                    in_specs[pname] = {"shape": list(sp.shape), "layout": sp.layout}
+
+            out_specs: dict[str, dict[str, Any]] = {}
+            for pname, tgt in targets.get("outputs", {}).items():
+                t_nid, t_port, kind = tgt[0], tgt[1], tgt[2]
+                src_dict = erc.node_tap_specs if kind == "tap" else erc.node_out_specs
+                sp = src_dict.get(t_nid, {}).get(t_port)
+                if sp:
+                    out_specs[pname] = {"shape": list(sp.shape), "layout": sp.layout}
+
+            tap_specs: dict[str, dict[str, Any]] = {}
+            for pname, tgt in targets.get("taps", {}).items():
+                t_nid, t_port, kind = tgt[0], tgt[1], tgt[2]
+                src_dict = erc.node_tap_specs if kind == "tap" else erc.node_out_specs
+                sp = src_dict.get(t_nid, {}).get(t_port)
+                if sp:
+                    tap_specs[pname] = {"shape": list(sp.shape), "layout": sp.layout}
+
+            node_out_specs_view[node.id] = out_specs
+            node_tap_specs_view[node.id] = tap_specs
+
+            nodes_payload.append({
+                "id": node.id,
+                "type": "subgraph",
+                "display_name": (sdef.name if sdef else "Subgraph"),
+                "title": ((sdef.title or sdef.name) if sdef else "子图封装"),
+                "label": node.label,
+                "description": (sdef.description or f"封装子图 {sg_id}") if sdef else f"缺失子图 {sg_id}",
+                "category": "group",
+                "params": node.params,
+                "position": positions[node.id],
+                "inputs": [m.port_name for m in sdef.inputs] if sdef else [],
+                "outputs": [m.port_name for m in sdef.outputs] if sdef else [],
+                "taps": [m.port_name for m in sdef.taps] if sdef else [],
+                "in_specs": in_specs,
+                "out_specs": out_specs,
+                "tap_specs": tap_specs,
+                "subgraph_info": (
+                    {
+                        "subgraph_id": sg_id,
+                        "node_count": len(sdef.nodes),
+                        "edge_count": len(sdef.edges),
+                        "inputs": [m.model_dump() for m in sdef.inputs],
+                        "outputs": [m.model_dump() for m in sdef.outputs],
+                        "taps": [m.model_dump() for m in sdef.taps],
+                    }
+                    if sdef
+                    else None
+                ),
+            })
+            continue
+
         cls = reg.get(node.type) if reg.has(node.type) else None
-        sig = erc.signatures.get(node.id)
+        sig = erc.signatures.get(flat_nid)
         if sig is None and cls is not None:
             try:
                 sig = cls.declare_ports(node.params)
@@ -124,16 +241,18 @@ def serialize_graph_ir(
 
         in_specs = {
             k: {"shape": list(v.shape), "layout": v.layout}
-            for k, v in erc.node_in_specs.get(node.id, {}).items()
+            for k, v in erc.node_in_specs.get(flat_nid, {}).items()
         }
         out_specs = {
             k: {"shape": list(v.shape), "layout": v.layout}
-            for k, v in erc.node_out_specs.get(node.id, {}).items()
+            for k, v in erc.node_out_specs.get(flat_nid, {}).items()
         }
         tap_specs = {
             k: {"shape": list(v.shape), "layout": v.layout}
-            for k, v in erc.node_tap_specs.get(node.id, {}).items()
+            for k, v in erc.node_tap_specs.get(flat_nid, {}).items()
         }
+        node_out_specs_view[node.id] = out_specs
+        node_tap_specs_view[node.id] = tap_specs
         nodes_payload.append({
             "id": node.id,
             "type": node.type,
@@ -152,17 +271,18 @@ def serialize_graph_ir(
         })
 
     edges_payload = []
-    for edge in graph.edges:
-        plan = erc.auto_bridges.get(edge.id)
+    for edge in view_graph.edges:
+        flat_eid = f"{prefix}{edge.id}"
+        plan = erc.auto_bridges.get(flat_eid)
         shape_info: Optional[list[int]] = None
         if edge.edge_kind == "tap":
-            spec = erc.node_tap_specs.get(edge.src_node, {}).get(edge.src_port)
-            if spec:
-                shape_info = list(spec.shape)
+            sp_dict = node_tap_specs_view.get(edge.src_node, {}).get(edge.src_port)
+            if sp_dict:
+                shape_info = list(sp_dict["shape"])
         else:
-            spec = erc.node_out_specs.get(edge.src_node, {}).get(edge.src_port)
-            if spec:
-                shape_info = list(spec.shape)
+            sp_dict = node_out_specs_view.get(edge.src_node, {}).get(edge.src_port)
+            if sp_dict:
+                shape_info = list(sp_dict["shape"])
         edges_payload.append({
             "id": edge.id,
             "src_node": edge.src_node,
@@ -171,6 +291,8 @@ def serialize_graph_ir(
             "dst_port": edge.dst_port,
             "edge_kind": edge.edge_kind,
             "bridge": edge.bridge,
+            "bridge_init": edge.bridge_init,
+            "bridge_bias_init": edge.bridge_bias_init,
             "stop_grad": edge.stop_grad,
             "watch_grad": edge.watch_grad,
             "shape": shape_info,
@@ -178,19 +300,37 @@ def serialize_graph_ir(
                 {
                     "from": list(plan.src_spec.shape),
                     "to": list(plan.dst_spec.shape),
+                    "module_type": plan.module_type,
+                    "in_dim": plan.in_dim,
+                    "out_dim": plan.out_dim,
+                    "param_count": plan.param_count,
+                    "weight_init": plan.weight_init,
+                    "bias_init": plan.bias_init,
                 }
                 if plan
                 else None
             ),
         })
 
+    def _map_diag_nid(raw_nid: Optional[str]) -> Optional[str]:
+        if not raw_nid:
+            return None
+        if prefix:
+            if raw_nid.startswith(prefix):
+                rest = raw_nid[len(prefix):]
+                return rest.split("/", 1)[0]
+            return None
+        return flat_to_outer.get(raw_nid, raw_nid)
+
     return {
         "name": file_name,
         "graph_name": graph.name,
+        "active_subgraph_id": active_sub_id,
         "nodes": nodes_payload,
         "edges": edges_payload,
         "losses": [lc.model_dump() for lc in graph.losses],
         "trainer": graph.trainer.model_dump(),
+        "subgraphs": {k: v.model_dump() for k, v in graph.subgraphs.items()},
         "erc": {
             "passed": erc.passed,
             "topo_order": erc.topo_order,
@@ -199,7 +339,8 @@ def serialize_graph_ir(
                     "level": d.level,
                     "code": d.code,
                     "message": d.message,
-                    "node_id": d.node_id,
+                    "node_id": _map_diag_nid(d.node_id),
+                    "raw_node_id": d.node_id,
                     "edge_id": d.edge_id,
                 }
                 for d in erc.diagnostics
@@ -343,13 +484,22 @@ def create_app(
         raw_graph = body.get("graph", body) if isinstance(body, dict) else body
         file_name = str(body.get("name", "draft.json")) if isinstance(body, dict) else "draft.json"
         force_auto = bool(body.get("auto_layout", False)) if isinstance(body, dict) else False
+        view_subgraph_path = body.get("view_subgraph_path") if isinstance(body, dict) else None
         try:
             graph = GraphIR.model_validate(raw_graph)
         except ValidationError as exc:
             return web.json_response({"error": f"GraphIR 校验失败: {exc}"}, status=400)
 
         reg = get_default_registry(plugins_dir)
-        return web.json_response(serialize_graph_ir(graph, reg, file_name=file_name, force_auto_layout=force_auto))
+        return web.json_response(
+            serialize_graph_ir(
+                graph,
+                reg,
+                file_name=file_name,
+                force_auto_layout=force_auto,
+                view_subgraph_path=view_subgraph_path,
+            )
+        )
 
     async def api_graph_save(request: web.Request) -> web.Response:
         try:
@@ -544,9 +694,12 @@ def create_app(
             clients.discard(ws)
         return ws
 
+    static_dir = Path(__file__).parent / "static"
+    static_dir.mkdir(parents=True, exist_ok=True)
     app = web.Application(middlewares=[_create_origin_only_middleware()])
     app.add_routes([
         web.get("/", index),
+        web.static("/static", static_dir),
         web.get("/api/components", api_components),
         web.get("/api/graphs", api_graphs),
         web.get("/api/graph", api_graph),

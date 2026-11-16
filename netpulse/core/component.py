@@ -7,7 +7,7 @@ from typing import Any, ClassVar
 
 import torch.nn as nn
 
-from netpulse.core.types import CategoryKind, ComponentSignature, ParamSpec, ResolvedSpec
+from netpulse.core.types import CategoryKind, ComponentSignature, ParamSpec, ResolvedSpec, Signal
 
 
 class BaseComponent(ABC):
@@ -46,3 +46,11 @@ class BaseComponent(ABC):
         in_specs: dict[str, ResolvedSpec],
     ) -> nn.Module:
         """根据解析后的上游维度构建 PyTorch nn.Module。"""
+
+    def compute_metrics(
+        self,
+        params: dict[str, Any],
+        inputs: dict[str, Signal],
+    ) -> dict[str, tuple[float, int]]:
+        """可选：基于当前节点的输入 Signal 计算可累加指标，如 {'acc': (correct, total)}。"""
+        return {}

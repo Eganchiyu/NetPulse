@@ -8,8 +8,11 @@
 
 - **原生 PyTorch 编译**：`GraphCompiler.compile()` 直接生成标准 `CompiledGraph(nn.Module)`，无缝复用 PyTorch `autograd`、优化器与 `state_dict` 导出。
 - **EDA 式电气规则检查（ERC）与 AutoBridge**：
-  - 自动执行环检测、端口契约校验与 `torch.device("meta")` 零显存形状推导。
-  - 维度不匹配时报错提示插入转换元件（如 `Flatten`），或在 `bridge="auto"` 时自动插入可学习的 `MatrixBridge`（`Linear` / `1x1 Conv2d`）。
+  - 自动执行环检测、端口契约校验、`trainer.batch_size` 联动 `torch.device("meta")` 零显存形状推导，并在 `batch_size=1` 时自动拦截 `BatchNorm2d` 或警告 `orthogonal` 正则退化。
+  - 维度不匹配时报错提示插入转换元件（如 `Flatten`），或在 `bridge="auto"` 时自动插入可学习的 `MatrixBridge`（`Linear` / `1x1 Conv2d`，支持 `bridge_init` 权重初始化配置、参数量与实时权重范数监控及一键「物化为显式节点」）。
+- **子图封装（Subgraph / Group Node）与多源协同**：
+  - 支持将画布中框选/多选（`Shift+拖框` / `Shift+点击`）的一组节点一键封装为可复用 `SubgraphDef`（`Ctrl+G`），支持双击下钻内部编辑（面包屑导航）、解散还原与多层嵌套；编译期自动递归展开为扁平 DAG `nn.Module`。
+  - 支持多个 `source` 数据源协同输入（如双流对比学习/蒸馏），并通过组件级 `compute_metrics` 协议支持自定义 Loss 扩展验证指标。
 - **隐层抽头（Tap）与多目标正则化**：
   - 通过约定返回（`forward_with_taps`）或 PyTorch `register_forward_hook` 无侵入抽取任意隐藏层输出至 `tap_bus`。
   - Loss 与正则项节点（如 `cross_entropy_loss`、`activation_reg_loss` 的 `l1`/`l2`/`orthogonal` 模式）与网络层平级连线，统一加权反传。
@@ -39,9 +42,9 @@
 
 ```text
 netpulse/
-├── core/           # Signal / PortSpec(title, description) / ParamSpec / GraphIR / Registry / ERC / GraphCompiler / Trainer
+├── core/           # Signal / PortSpec / ParamSpec / GraphIR / Subgraph / Registry / ERC / GraphCompiler / Trainer
 ├── components/     # 内置 30 个元件（含参数 Schema、端口中文元数据）与统一初始化工具
-├── webui/          # 外挂可视化与交互编辑服务端 (aiohttp + WS) 与单文件前端 index.html
+├── webui/          # 外挂可视化与交互编辑服务端 (aiohttp + WS)、index.html 与 static/probe_canvas.js
 └── cli.py          # 命令行入口 (list / check / train / serve)
 templates/          # 内置经典工作流模板 (01_spiral_mlp … 05_lstm_time_series_forecast)
 examples/           # 示例计算图 (spiral_quickstart / mnist_atomic / mnist_tap_reg / lstm_forecast_classic …)
@@ -94,7 +97,7 @@ WebUI 常用操作：
 - **添加节点**：从左侧元件库点击/拖入画布，或**双击画布空白处**打开快速搜索框回车创建。
 - **拖拽连线**：从右侧 `output` 或金色 `tap` 端口圆点按住拖至目标节点左侧 `input` 端口释放，连线时自动触发 ERC 静态校验与 AutoBridge 推导。
 - **画布内直接编辑元件**：节点标题右侧 **✎** 可重命名显示标签（不影响节点 id 与连线）；**⚙** 展开节点内联「快速参数编辑」面板，改值即触发 ERC 重算，无需切换到属性面板。
-- **编辑参数与连接**：点击节点/连线在右侧 **属性编辑** 面板修改参数、权重或 `AutoBridge` 策略；每个参数项可 **↺ 恢复默认值**，数值越界或 JSON 格式错误会就地标红提示；同时可查看该元件的**中文简介**与**每个端口的中文含义与说明**（含布局与实时 `shape`）。支持 `Delete/Backspace` 删除选中项、`Ctrl+Z`/`Ctrl+Y` 撤销重做、`Ctrl+S` 保存。
+- **编辑参数与连接**：点击节点/连线在右侧 **属性编辑** 面板修改参数、权重或 `AutoBridge` 策略（含初始化方式选择与一键物化为独立 `matrix_bridge` 节点）；每个参数项可 **↺ 恢复默认值**，数值越界或 JSON 格式错误会就地标红提示；同时可查看该元件的**中文简介**与**每个端口的中文含义与说明**（含布局与实时 `shape`）。支持 `Shift+拖框` 多选、`Ctrl+G` 封装/解散子图、双击子图下钻编辑、`Delete/Backspace` 删除选中项、`Ctrl+Z`/`Ctrl+Y` 撤销重做、`Ctrl+S` 保存。
 - **模板与文件**：顶部 **新建 / 模板 / 导入 / 导出 / 另存为 / 删除** 管理工程文件；模板库内置 `01_spiral_mlp` 至 `05_lstm_time_series_forecast` 五个经典工作流。
 - **直接训练未保存图**：编辑后无需先落盘，点击 **开始训练** 即可直接提交当前画布图运行，并在 **训练遥测 & ERC** 面板实时调速观察 Loss 曲线与张量脉冲。
 

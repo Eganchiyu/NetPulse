@@ -8,6 +8,8 @@ from typing import Literal, Optional
 import torch
 import torch.nn as nn
 
+from netpulse.components.init_utils import apply_init
+from netpulse.core.component import BaseComponent
 from netpulse.core.erc import AutoBridgePlan, ERCResult, run_erc
 from netpulse.core.ir import EdgeIR, GraphIR, LossConfig, NodeIR
 from netpulse.core.registry import ComponentRegistry, get_default_registry
@@ -26,6 +28,12 @@ class _AutoBridgeModule(nn.Module):
             self.proj: nn.Module = nn.Conv2d(src.shape[1], dst.shape[1], kernel_size=1)
         else:
             self.proj = nn.Linear(src.shape[-1], dst.shape[-1])
+        apply_init(
+            self.proj.weight,
+            self.proj.bias,
+            weight_init=plan.weight_init,
+            bias_init=plan.bias_init,
+        )
 
     def forward(self, sig: Signal) -> Signal:
         return sig.clone_with(data=self.proj(sig.data))
@@ -42,13 +50,17 @@ class CompiledGraph(nn.Module):
         bridges_mod: nn.ModuleDict,
         categories: dict[str, str],
         tap_hook_targets: dict[str, dict[str, tuple[str, str]]],
+        metric_providers: Optional[dict[str, tuple[BaseComponent, dict[str, Any]]]] = None,
+        raw_graph_ir: Optional[GraphIR] = None,
     ) -> None:
         super().__init__()
         self.graph_ir = graph_ir
+        self.raw_graph_ir = raw_graph_ir or graph_ir
         self.erc_result = erc_result
         self.nodes_mod = nodes_mod
         self.bridges_mod = bridges_mod
         self.categories = categories
+        self._metric_providers = metric_providers or {}
 
         self._node_map: dict[str, NodeIR] = {n.id: n for n in graph_ir.nodes}
         self._incoming_edges: dict[str, list[EdgeIR]] = defaultdict(list)
@@ -110,6 +122,7 @@ class CompiledGraph(nn.Module):
         outputs: dict[str, dict[str, Signal]] = {}
         tap_bus: dict[str, Signal] = {}
         loss_dict: dict[str, torch.Tensor] = {}
+        metrics: dict[str, tuple[float, int]] = {}
         self.grad_bus.clear()
 
         for nid in self.erc_result.topo_order:
@@ -178,6 +191,14 @@ class CompiledGraph(nn.Module):
             if cat == "loss":
                 loss_sig = node_out["loss"]
                 loss_dict[nid] = loss_sig.data
+                provider = self._metric_providers.get(nid)
+                if provider is not None:
+                    comp_inst, comp_params = provider
+                    with torch.no_grad():
+                        node_metrics = comp_inst.compute_metrics(comp_params, node_inputs)
+                    for mname, (mval, mcnt) in node_metrics.items():
+                        prev_val, prev_cnt = metrics.get(mname, (0.0, 0))
+                        metrics[mname] = (prev_val + float(mval), prev_cnt + int(mcnt))
 
         total_loss: Optional[torch.Tensor] = None
         if compute_losses and loss_dict:
@@ -195,6 +216,7 @@ class CompiledGraph(nn.Module):
             loss_dict=loss_dict,
             total_loss=total_loss,
             grad_bus=self.grad_bus,
+            metrics=metrics,
         )
 
 
@@ -211,16 +233,18 @@ class GraphCompiler:
         if not erc.passed:
             raise ValueError(f"ERC 校验未通过:\n{erc.format_report()}")
 
+        work_ir = erc.expanded_graph or graph_ir
         nodes_mod = nn.ModuleDict()
         categories: dict[str, str] = {}
-        node_map = {n.id: n for n in graph_ir.nodes}
+        node_map = {n.id: n for n in work_ir.nodes}
 
         used_taps_by_node: dict[str, set[str]] = defaultdict(set)
-        for edge in graph_ir.edges:
+        for edge in work_ir.edges:
             if edge.edge_kind == "tap":
                 used_taps_by_node[edge.src_node].add(edge.src_port)
 
         tap_hook_targets: dict[str, dict[str, tuple[str, str]]] = {}
+        metric_providers: dict[str, tuple[BaseComponent, dict[str, Any]]] = {}
 
         for nid in erc.topo_order:
             node = node_map[nid]
@@ -229,6 +253,8 @@ class GraphCompiler:
             categories[nid] = cls.category
             mod = comp.build(node.params, erc.node_in_specs[nid])
             nodes_mod[nid] = mod
+            if cls.category == "loss":
+                metric_providers[nid] = (comp, node.params)
 
             used_taps = used_taps_by_node.get(nid, set())
             if used_taps and not hasattr(mod, "forward_with_taps"):
@@ -243,10 +269,12 @@ class GraphCompiler:
             bridges_mod[eid] = _AutoBridgeModule(plan)
 
         return CompiledGraph(
-            graph_ir=graph_ir,
+            graph_ir=work_ir,
             erc_result=erc,
             nodes_mod=nodes_mod,
             bridges_mod=bridges_mod,
             categories=categories,
             tap_hook_targets=tap_hook_targets,
+            metric_providers=metric_providers,
+            raw_graph_ir=graph_ir,
         )

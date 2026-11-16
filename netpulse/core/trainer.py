@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 
 from netpulse.core.compiler import CompiledGraph
-from netpulse.core.types import Signal
+from netpulse.core.types import GraphOutput, Signal
 
 
 @dataclass
@@ -80,27 +80,68 @@ def _to_signal_batch(
     raise TypeError(f"Unsupported batch format from source '{source_id}': {type(raw_batch)}")
 
 
+def find_source_ids(compiled: CompiledGraph) -> list[str]:
+    """查找计算图中的所有 Source 节点 ID（支持单源与多源协同训练）。"""
+    sources = [nid for nid, cat in compiled.categories.items() if cat == "source"]
+    if not sources:
+        raise ValueError("Trainer 要求至少 1 个 source 节点，当前未发现任何 source")
+    return sources
+
+
+def build_source_loaders(
+    compiled: CompiledGraph,
+    batch_size: int,
+    seed: int,
+) -> tuple[list[str], list[Any], Optional[list[Any]]]:
+    """为所有 Source 节点构建训练与验证 DataLoader 列表。"""
+    source_ids = find_source_ids(compiled)
+    train_loaders: list[Any] = []
+    val_loaders: list[Any] = []
+    for sid in source_ids:
+        tr, va = compiled.nodes_mod[sid].build_dataloaders(batch_size=batch_size, seed=seed)
+        train_loaders.append(tr)
+        val_loaders.append(va)
+    has_all_val = all(va is not None for va in val_loaders)
+    return source_ids, train_loaders, (val_loaders if has_all_val else None)
+
+
+def merge_source_batches(
+    source_ids: list[str],
+    raw_batches: tuple[Any, ...] | list[Any],
+    device: torch.device,
+) -> dict[str, dict[str, Signal]]:
+    """将多路 Source 的原始批数据合并为 CompiledGraph.forward 所需的 batch 字典。"""
+    merged: dict[str, dict[str, Signal]] = {}
+    for sid, raw_batch in zip(source_ids, raw_batches):
+        merged.update(_to_signal_batch(sid, raw_batch, device))
+    return merged
+
+
 def _extract_acc(
     compiled: CompiledGraph,
     out_signals: dict[str, dict[str, Signal]],
     batch: dict[str, dict[str, Signal]],
-    source_id: str,
+    source_id: Optional[str] = None,
+    graph_output: Optional[GraphOutput] = None,
 ) -> Optional[tuple[int, int]]:
-    if source_id not in batch or "y" not in batch[source_id]:
-        return None
-    y = batch[source_id]["y"].data
-    if y.dtype not in (torch.int64, torch.int32):
-        return None
+    """从 GraphOutput.metrics 聚合准确率（由 Loss 组件 compute_metrics 钩子提供）。"""
+    if graph_output is not None and "acc" in graph_output.metrics:
+        correct, total = graph_output.metrics["acc"]
+        if total > 0:
+            return int(round(correct)), int(total)
 
-    node_types = {n.id: n.type for n in compiled.graph_ir.nodes}
-    for edge in compiled.graph_ir.edges:
-        if node_types.get(edge.dst_node) == "cross_entropy_loss" and edge.dst_port == "logits":
-            src_ports = out_signals.get(edge.src_node, {})
-            if edge.src_port in src_ports:
-                logits = src_ports[edge.src_port].data
-                if logits.ndim == 2 and logits.shape[0] == y.shape[0]:
-                    preds = logits.argmax(dim=-1)
-                    return int((preds == y).sum().item()), int(y.shape[0])
+    if source_id and source_id in batch and "y" in batch[source_id]:
+        y = batch[source_id]["y"].data
+        if y.dtype in (torch.int64, torch.int32):
+            node_types = {n.id: n.type for n in compiled.graph_ir.nodes}
+            for edge in compiled.graph_ir.edges:
+                if node_types.get(edge.dst_node) == "cross_entropy_loss" and edge.dst_port == "logits":
+                    src_ports = out_signals.get(edge.src_node, {})
+                    if edge.src_port in src_ports:
+                        logits = src_ports[edge.src_port].data
+                        if logits.ndim == 2 and logits.shape[0] == y.shape[0]:
+                            preds = logits.argmax(dim=-1)
+                            return int((preds == y).sum().item()), int(y.shape[0])
     return None
 
 
@@ -111,27 +152,31 @@ class Trainer:
         self.compiled = compiled
         self.cfg = compiled.graph_ir.trainer
 
-    def _find_source_id(self) -> str:
-        sources = [nid for nid, cat in self.compiled.categories.items() if cat == "source"]
-        if len(sources) != 1:
-            raise ValueError(f"Phase 0 Trainer 要求恰好 1 个 source 节点，当前发现: {sources}")
-        return sources[0]
+    def _find_source_ids(self) -> list[str]:
+        return find_source_ids(self.compiled)
 
     @torch.no_grad()
-    def evaluate(self, val_loader, source_id: str, device: torch.device) -> tuple[float, Optional[float]]:
+    def evaluate(
+        self,
+        val_loaders: list[Any],
+        source_ids: list[str] | str,
+        device: torch.device,
+    ) -> tuple[float, Optional[float]]:
         self.compiled.eval()
+        sids = [source_ids] if isinstance(source_ids, str) else list(source_ids)
+        loaders = val_loaders if isinstance(val_loaders, list) else [val_loaders]
         total_loss = 0.0
         n_batches = 0
         correct = 0
         total_samples = 0
 
-        for raw_batch in val_loader:
-            batch = _to_signal_batch(source_id, raw_batch, device)
+        for raw_batches in zip(*loaders):
+            batch = merge_source_batches(sids, raw_batches, device)
             out = self.compiled(batch, mode="eval", compute_losses=True)
             if out.total_loss is not None:
                 total_loss += float(out.total_loss.item())
                 n_batches += 1
-            acc_pair = _extract_acc(self.compiled, out.outputs, batch, source_id)
+            acc_pair = _extract_acc(self.compiled, out.outputs, batch, graph_output=out)
             if acc_pair is not None:
                 correct += acc_pair[0]
                 total_samples += acc_pair[1]
@@ -145,9 +190,8 @@ class Trainer:
         device = torch.device(self.cfg.device)
         self.compiled.to(device)
 
-        source_id = self._find_source_id()
-        source_mod = self.compiled.nodes_mod[source_id]
-        train_loader, val_loader = source_mod.build_dataloaders(
+        source_ids, train_loaders, val_loaders = build_source_loaders(
+            self.compiled,
             batch_size=self.cfg.batch_size,
             seed=self.cfg.seed,
         )
@@ -165,8 +209,8 @@ class Trainer:
 
         for epoch in range(self.cfg.epochs):
             self.compiled.train()
-            for raw_batch in train_loader:
-                batch = _to_signal_batch(source_id, raw_batch, device)
+            for raw_batches in zip(*train_loaders):
+                batch = merge_source_batches(source_ids, raw_batches, device)
                 optimizer.zero_grad()
                 out = self.compiled(batch, mode="train")
                 if out.total_loss is None:
@@ -199,8 +243,8 @@ class Trainer:
 
         val_loss: Optional[float] = None
         val_acc: Optional[float] = None
-        if val_loader is not None:
-            val_loss, val_acc = self.evaluate(val_loader, source_id, device)
+        if val_loaders is not None:
+            val_loss, val_acc = self.evaluate(val_loaders, source_ids, device)
             if verbose:
                 acc_str = f" val_acc={val_acc:.4f}" if val_acc is not None else ""
                 print(f"[eval] val_loss={val_loss:.4f}{acc_str}")
@@ -218,7 +262,7 @@ class Trainer:
         p.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "state_dict": self.compiled.state_dict(),
-            "graph_ir": self.compiled.graph_ir.model_dump(),
+            "graph_ir": self.compiled.raw_graph_ir.model_dump(),
         }
         torch.save(payload, p)
         return p

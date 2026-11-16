@@ -18,6 +18,7 @@
     --bridge: #f59e0b;
     --loss: #f43f5e;
     --output: #06b6d4;
+    --group: #8b5cf6;
     --tap: #fbbf24;
     --accent: #38bdf8;
     --danger: #fb7185;
@@ -204,6 +205,28 @@
   .node-card[data-cat="loss"] .node-head { border-top-color: var(--loss); }
   .node-card[data-cat="output"] { width: 276px; }
   .node-card[data-cat="output"] .node-head { border-top-color: var(--output); }
+  .node-card[data-cat="group"] { width: 264px; border-color: rgba(139, 92, 246, .55); }
+  .node-card[data-cat="group"] .node-head { border-top-color: var(--group); background: rgba(139, 92, 246, .08); }
+  .marquee-box {
+    position: absolute; border: 1.5px dashed var(--accent);
+    background: rgba(56, 189, 248, .12); pointer-events: none; z-index: 40; display: none;
+  }
+  .subgraph-breadcrumb {
+    position: absolute; top: 12px; left: 14px; z-index: 25;
+    display: none; align-items: center; gap: 6px;
+    background: rgba(22, 27, 34, 0.94); border: 1px solid rgba(139, 92, 246, .55);
+    border-radius: 8px; padding: 5px 10px; font-size: 12px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.45);
+  }
+  .subgraph-breadcrumb.open { display: flex; }
+  .breadcrumb-seg { color: #c4b5fd; cursor: pointer; font-weight: 600; }
+  .breadcrumb-seg:hover { text-decoration: underline; }
+  .autobridge-card {
+    background: rgba(245, 158, 11, .08); border: 1px solid rgba(245, 158, 11, .35);
+    border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px;
+    font-size: 11.5px;
+  }
+  .autobridge-meta { font-family: ui-monospace, monospace; font-size: 11px; color: #fde68a; }
 
   .node-title { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .node-type {
@@ -623,6 +646,8 @@
     <span id="ercBadge" class="badge pass" title="查看 ERC 详情">ERC 检查中</span>
     <button id="undoBtn" title="撤销 (Ctrl+Z)" disabled>撤销</button>
     <button id="redoBtn" title="重做 (Ctrl+Y)" disabled>重做</button>
+    <button id="groupBtn" title="将框选/多选的节点封装为子图 (Ctrl+G)" disabled>封装子图</button>
+    <button id="ungroupBtn" title="解散当前选中的子图节点" disabled>解散</button>
     <button id="autoLayoutBtn" title="按拓扑层级重排节点">自动排版</button>
     <button id="fitBtn" title="自适应缩放对齐画布">适应</button>
     <div class="divider"></div>
@@ -676,6 +701,9 @@
         <div id="nodesLayer" class="nodes-layer"></div>
       </div>
 
+      <div id="marqueeBox" class="marquee-box"></div>
+      <div id="subgraphBreadcrumb" class="subgraph-breadcrumb"></div>
+
       <!-- ComfyUI 风格双击快速建点弹窗 -->
       <div id="quickSearch" class="quick-search">
         <input id="quickSearchInput" type="text" placeholder="输入元件名回车创建 (Esc 关闭)" />
@@ -688,8 +716,9 @@
         <span><i class="legend-dot" style="background:var(--op)"></i>Op/Bridge</span>
         <span><i class="legend-dot" style="background:var(--loss)"></i>Loss</span>
         <span><i class="legend-dot" style="background:var(--output)"></i>Output</span>
+        <span><i class="legend-dot" style="background:var(--group)"></i>Subgraph</span>
         <span><i class="legend-dot" style="background:var(--tap)"></i>Tap</span>
-        <span>| 双击画布添加节点 · 拖端口圆点连线 · 节点 ✎ 改名 / ⚙ 快速改参 · Del 删除选中 · Ctrl+Z 撤销</span>
+        <span>| 双击画布加点 · Shift+拖框多选 · Ctrl+G 封装子图 · 双击子图下钻 · Del 删除</span>
       </div>
 
       <svg id="minimap" class="minimap" viewBox="0 0 156 104"></svg>
@@ -811,8 +840,20 @@
   </div>
 </div>
 
+<script src="/static/probe_canvas.js"></script>
 <script>
-const NODE_W = 228;
+const NODE_W = 236;
+const OUTPUT_NODE_W = 276;
+const GROUP_NODE_W = 264;
+function getNodeWidth(nodeId) {
+  const el = state.nodeEls[nodeId];
+  if (el && el.offsetWidth) return el.offsetWidth;
+  const n = (state.viewData?.nodes || []).find((item) => item.id === nodeId);
+  if (!n) return NODE_W;
+  if (n.category === "output") return OUTPUT_NODE_W;
+  if (n.category === "group" || n.type === "subgraph") return GROUP_NODE_W;
+  return NODE_W;
+}
 const CAT_ORDER = ["source", "backbone", "op", "bridge", "loss", "output"];
 const CAT_LABELS = {
   source: "数据源 Source",
@@ -834,7 +875,9 @@ const state = {
   undoStack: [],
   redoStack: [],
   selectedNodeId: null,
+  selectedNodeIds: new Set(),
   selectedEdgeId: null,
+  subgraphPath: [],       // [{ nodeId, subgraphId, title }] 子图下钻面包屑
   positions: {},
   pan: { x: 20, y: 20 },
   scale: 1.0,
@@ -846,6 +889,7 @@ const state = {
   nodeEls: {},
   edgeMeta: [],
   gradStats: {},          // { edgeId: {shape, norm, mean, std} } 反向梯度总线快照
+  bridgeStats: {},        // { edgeId: {norm, mean, std, grad_norm, params} } AutoBridge 实时参数统计
   lastPulseTs: 0,
   wireDrag: null,         // { srcNode, srcPort, isTap }
   ercTimer: null,
@@ -922,6 +966,73 @@ function scheduleLiveErc(autoLayout = false) {
   state.ercTimer = setTimeout(() => runLiveErc(autoLayout), 80);
 }
 
+function getActiveGraphScope() {
+  if (!state.draftGraph) return null;
+  if (!state.subgraphPath.length) return state.draftGraph;
+  const top = state.subgraphPath[state.subgraphPath.length - 1];
+  return state.draftGraph.subgraphs?.[top.subgraphId] || state.draftGraph;
+}
+
+function updateGroupButtons() {
+  const scope = getActiveGraphScope();
+  const gBtn = $("groupBtn");
+  const uBtn = $("ungroupBtn");
+  if (gBtn) gBtn.disabled = !(scope && state.selectedNodeIds.size >= 2);
+  let canUngroup = false;
+  if (scope && state.selectedNodeIds.size === 1 && state.selectedNodeId) {
+    const n = scope.nodes.find((item) => item.id === state.selectedNodeId);
+    canUngroup = Boolean(n && n.type === "subgraph");
+  }
+  if (uBtn) uBtn.disabled = !canUngroup;
+}
+
+function renderBreadcrumb() {
+  const bar = $("subgraphBreadcrumb");
+  if (!bar) return;
+  if (!state.subgraphPath.length) {
+    bar.classList.remove("open");
+    bar.innerHTML = "";
+    return;
+  }
+  bar.classList.add("open");
+  let html = `<span class="breadcrumb-seg" data-depth="-1">主图 (${escText(state.draftGraph?.name || "root")})</span>`;
+  state.subgraphPath.forEach((seg, idx) => {
+    html += `<span style="color:var(--muted)">/</span><span class="breadcrumb-seg" data-depth="${idx}">${escText(seg.title || seg.nodeId)}</span>`;
+  });
+  html += `<button type="button" id="exitSubgraphBtn" style="margin-left:6px;padding:2px 7px;font-size:11px">返回上一层</button>`;
+  bar.innerHTML = html;
+  bar.querySelectorAll(".breadcrumb-seg").forEach((el) => {
+    el.addEventListener("click", () => exitSubgraphTo(Number(el.dataset.depth)));
+  });
+  $("exitSubgraphBtn").addEventListener("click", () => exitSubgraphTo(state.subgraphPath.length - 2));
+}
+
+function enterSubgraph(nodeId) {
+  const scope = getActiveGraphScope();
+  if (!scope) return;
+  const node = scope.nodes.find((n) => n.id === nodeId);
+  if (!node || node.type !== "subgraph") return;
+  const sgId = node.params?.subgraph_id;
+  const sdef = state.draftGraph?.subgraphs?.[sgId];
+  if (!sdef) { alert(`找不到子图定义: ${sgId}`); return; }
+  state.subgraphPath.push({ nodeId: node.id, subgraphId: sgId, title: node.label || sdef.title || sdef.name || sgId });
+  state.selectedNodeId = null;
+  state.selectedNodeIds.clear();
+  state.selectedEdgeId = null;
+  renderBreadcrumb();
+  runLiveErc().then(() => fitView());
+}
+
+function exitSubgraphTo(depth) {
+  if (depth < 0) state.subgraphPath = [];
+  else state.subgraphPath = state.subgraphPath.slice(0, depth + 1);
+  state.selectedNodeId = null;
+  state.selectedNodeIds.clear();
+  state.selectedEdgeId = null;
+  renderBreadcrumb();
+  runLiveErc().then(() => fitView());
+}
+
 async function runLiveErc(autoLayout = false) {
   if (!state.draftGraph) return;
   try {
@@ -932,6 +1043,7 @@ async function runLiveErc(autoLayout = false) {
         name: state.currentFile || "draft.json",
         graph: state.draftGraph,
         auto_layout: autoLayout,
+        view_subgraph_path: state.subgraphPath.map((s) => s.nodeId),
       }),
     });
     const data = await res.json();
@@ -940,9 +1052,10 @@ async function runLiveErc(autoLayout = false) {
       $("ercBadge").textContent = "IR 校验异常";
       return;
     }
-    if (autoLayout) {
+    const scope = getActiveGraphScope();
+    if (autoLayout && scope) {
       for (const vn of data.nodes) {
-        const dn = state.draftGraph.nodes.find((n) => n.id === vn.id);
+        const dn = scope.nodes.find((n) => n.id === vn.id);
         if (dn) dn.position = { ...vn.position };
       }
     }
@@ -999,7 +1112,8 @@ function renderPalette(filterText = "") {
 }
 
 function nextNodeId(typeId) {
-  const existing = new Set((state.draftGraph?.nodes || []).map((n) => n.id));
+  const scope = getActiveGraphScope();
+  const existing = new Set((scope?.nodes || []).map((n) => n.id));
   if (!existing.has(typeId)) return typeId;
   let i = 1;
   while (existing.has(`${typeId}_${i}`)) i++;
@@ -1007,52 +1121,314 @@ function nextNodeId(typeId) {
 }
 
 function nextEdgeId() {
-  const existing = new Set((state.draftGraph?.edges || []).map((e) => e.id));
+  const scope = getActiveGraphScope();
+  const existing = new Set((scope?.edges || []).map((e) => e.id));
   let i = 1;
   while (existing.has(`e${i}`)) i++;
   return `e${i}`;
 }
 
+function nextSubgraphId(base = "block") {
+  const subs = state.draftGraph?.subgraphs || {};
+  let i = 1;
+  while (subs[`${base}_${i}`]) i++;
+  return `${base}_${i}`;
+}
+
 function addNodeAt(typeId, x, y) {
-  if (!state.draftGraph || !state.components[typeId]) return;
+  const scope = getActiveGraphScope();
+  if (!scope || !state.components[typeId]) return;
   const info = state.components[typeId];
   pushUndo();
   const id = nextNodeId(typeId);
   const params = deepClone(info.default_params || {});
-  state.draftGraph.nodes.push({
+  scope.nodes.push({
     id,
     type: typeId,
     params,
     position: { x: Math.round(x), y: Math.round(y) },
   });
   if (info.category === "loss") {
-    state.draftGraph.losses.push({ node_id: id, weight: 1.0, enabled: true });
+    scope.losses = scope.losses || [];
+    scope.losses.push({ node_id: id, weight: 1.0, enabled: true });
   }
   state.selectedNodeId = id;
+  state.selectedNodeIds = new Set([id]);
   state.selectedEdgeId = null;
   switchTab("inspector");
   runLiveErc();
 }
 
 function deleteSelected() {
-  if (!state.draftGraph) return;
-  if (state.selectedNodeId) {
-    const nid = state.selectedNodeId;
+  const scope = getActiveGraphScope();
+  if (!scope) return;
+  const selIds = state.selectedNodeIds.size ? state.selectedNodeIds : (state.selectedNodeId ? new Set([state.selectedNodeId]) : null);
+  if (selIds && selIds.size > 0) {
     pushUndo();
-    state.draftGraph.nodes = state.draftGraph.nodes.filter((n) => n.id !== nid);
-    state.draftGraph.edges = state.draftGraph.edges.filter((e) => e.src_node !== nid && e.dst_node !== nid);
-    state.draftGraph.losses = state.draftGraph.losses.filter((l) => l.node_id !== nid);
+    scope.nodes = scope.nodes.filter((n) => !selIds.has(n.id));
+    scope.edges = scope.edges.filter((e) => !selIds.has(e.src_node) && !selIds.has(e.dst_node));
+    scope.losses = (scope.losses || []).filter((l) => !selIds.has(l.node_id));
     state.selectedNodeId = null;
+    state.selectedNodeIds.clear();
     runLiveErc();
     return;
   }
   if (state.selectedEdgeId) {
     const eid = state.selectedEdgeId;
     pushUndo();
-    state.draftGraph.edges = state.draftGraph.edges.filter((e) => e.id !== eid);
+    scope.edges = scope.edges.filter((e) => e.id !== eid);
     state.selectedEdgeId = null;
     runLiveErc();
   }
+}
+
+function groupSelectedNodes() {
+  const scope = getActiveGraphScope();
+  if (!scope || state.selectedNodeIds.size < 2) return;
+  const selectedSet = new Set(state.selectedNodeIds);
+  const selNodes = scope.nodes.filter((n) => selectedSet.has(n.id));
+  if (selNodes.length < 2) return;
+
+  pushUndo();
+  state.draftGraph.subgraphs = state.draftGraph.subgraphs || {};
+  const sgId = nextSubgraphId("subgraph");
+  const sgNodeId = nextNodeId("group");
+
+  const minX = Math.min(...selNodes.map((n) => n.position?.x ?? 0));
+  const minY = Math.min(...selNodes.map((n) => n.position?.y ?? 0));
+  const innerNodes = selNodes.map((n) => ({
+    ...deepClone(n),
+    position: {
+      x: Math.round((n.position?.x ?? 0) - minX + 80),
+      y: Math.round((n.position?.y ?? 0) - minY + 80),
+    },
+  }));
+
+  const innerEdges = [];
+  const nextScopeEdges = [];
+  const inputs = [];
+  const outputs = [];
+  const taps = [];
+  const usedPortNames = { in: new Set(), out: new Set(), tap: new Set() };
+  const inKeyToPort = new Map();
+  const outKeyToPort = new Map();
+
+  const allocPort = (side, hint) => {
+    const base = hint.replace(/[^a-zA-Z0-9_]/g, "_") || side;
+    let name = base;
+    let i = 2;
+    while (usedPortNames[side].has(name)) { name = `${base}_${i++}`; }
+    usedPortNames[side].add(name);
+    return name;
+  };
+
+  for (const edge of scope.edges) {
+    const srcIn = selectedSet.has(edge.src_node);
+    const dstIn = selectedSet.has(edge.dst_node);
+    if (srcIn && dstIn) {
+      innerEdges.push(deepClone(edge));
+    } else if (!srcIn && dstIn) {
+      const k = `${edge.dst_node}.${edge.dst_port}`;
+      let pname = inKeyToPort.get(k);
+      if (!pname) {
+        pname = allocPort("in", `${edge.dst_node}_${edge.dst_port}`);
+        inKeyToPort.set(k, pname);
+        inputs.push({ port_name: pname, internal_node: edge.dst_node, internal_port: edge.dst_port, edge_kind: "signal" });
+      }
+      nextScopeEdges.push({ ...deepClone(edge), dst_node: sgNodeId, dst_port: pname });
+    } else if (srcIn && !dstIn) {
+      const isTap = edge.edge_kind === "tap";
+      const side = isTap ? "tap" : "out";
+      const k = `${edge.edge_kind}:${edge.src_node}.${edge.src_port}`;
+      let pname = outKeyToPort.get(k);
+      if (!pname) {
+        pname = allocPort(side, `${edge.src_node}_${edge.src_port}`);
+        outKeyToPort.set(k, pname);
+        const mapping = { port_name: pname, internal_node: edge.src_node, internal_port: edge.src_port, edge_kind: edge.edge_kind || "signal" };
+        if (isTap) taps.push(mapping);
+        else outputs.push(mapping);
+      }
+      nextScopeEdges.push({ ...deepClone(edge), src_node: sgNodeId, src_port: pname });
+    } else {
+      nextScopeEdges.push(deepClone(edge));
+    }
+  }
+
+  const innerLosses = (scope.losses || []).filter((l) => selectedSet.has(l.node_id)).map((l) => deepClone(l));
+  scope.losses = (scope.losses || []).filter((l) => !selectedSet.has(l.node_id));
+
+  state.draftGraph.subgraphs[sgId] = {
+    id: sgId,
+    name: sgId,
+    title: `子图模块 (${selNodes.length} 节点)`,
+    description: `包含 ${selNodes.map((n) => n.id).slice(0, 4).join(", ")}${selNodes.length > 4 ? "…" : ""}`,
+    nodes: innerNodes,
+    edges: innerEdges,
+    losses: innerLosses,
+    inputs,
+    outputs,
+    taps,
+  };
+
+  scope.nodes = scope.nodes.filter((n) => !selectedSet.has(n.id));
+  scope.nodes.push({
+    id: sgNodeId,
+    type: "subgraph",
+    params: { subgraph_id: sgId },
+    position: { x: Math.round(minX), y: Math.round(minY) },
+    label: null,
+  });
+  scope.edges = nextScopeEdges;
+
+  state.selectedNodeId = sgNodeId;
+  state.selectedNodeIds = new Set([sgNodeId]);
+  state.selectedEdgeId = null;
+  runLiveErc();
+}
+
+function ungroupSelectedNode() {
+  const scope = getActiveGraphScope();
+  if (!scope || !state.selectedNodeId) return;
+  const sgNode = scope.nodes.find((n) => n.id === state.selectedNodeId);
+  if (!sgNode || sgNode.type !== "subgraph") return;
+  const sgId = sgNode.params?.subgraph_id;
+  const sdef = state.draftGraph?.subgraphs?.[sgId];
+  if (!sdef) return;
+
+  pushUndo();
+  const existingIds = new Set(scope.nodes.map((n) => n.id));
+  const idMap = {};
+  const ox = sgNode.position?.x ?? 100;
+  const oy = sgNode.position?.y ?? 100;
+  const minInX = sdef.nodes.length ? Math.min(...sdef.nodes.map((n) => n.position?.x ?? 80)) : 80;
+  const minInY = sdef.nodes.length ? Math.min(...sdef.nodes.map((n) => n.position?.y ?? 80)) : 80;
+
+  const unpackedNodes = [];
+  const newSelected = new Set();
+  for (const inNode of sdef.nodes) {
+    let nid = inNode.id;
+    if (existingIds.has(nid)) {
+      let idx = 1;
+      while (existingIds.has(`${nid}_${idx}`)) idx++;
+      nid = `${nid}_${idx}`;
+    }
+    existingIds.add(nid);
+    idMap[inNode.id] = nid;
+    newSelected.add(nid);
+    unpackedNodes.push({
+      ...deepClone(inNode),
+      id: nid,
+      position: {
+        x: Math.round(ox + ((inNode.position?.x ?? minInX) - minInX)),
+        y: Math.round(oy + ((inNode.position?.y ?? minInY) - minInY)),
+      },
+    });
+  }
+
+  const existingEdgeIds = new Set(scope.edges.map((e) => e.id));
+  const allocEdgeId = (hint) => {
+    let eid = hint;
+    let i = 1;
+    while (existingEdgeIds.has(eid)) eid = `e_${i++}`;
+    existingEdgeIds.add(eid);
+    return eid;
+  };
+
+  const inByPort = Object.fromEntries((sdef.inputs || []).map((m) => [m.port_name, m]));
+  const outByPort = Object.fromEntries((sdef.outputs || []).map((m) => [m.port_name, m]));
+  const tapByPort = Object.fromEntries((sdef.taps || []).map((m) => [m.port_name, m]));
+
+  const nextEdges = [];
+  for (const e of scope.edges) {
+    const ne = deepClone(e);
+    if (ne.src_node === sgNode.id) {
+      const m = (ne.edge_kind === "tap" ? tapByPort[ne.src_port] : outByPort[ne.src_port]) || outByPort[ne.src_port] || tapByPort[ne.src_port];
+      if (!m || !idMap[m.internal_node]) continue;
+      ne.src_node = idMap[m.internal_node];
+      ne.src_port = m.internal_port;
+      if (m.edge_kind === "tap") ne.edge_kind = "tap";
+    }
+    if (ne.dst_node === sgNode.id) {
+      const m = inByPort[ne.dst_port];
+      if (!m || !idMap[m.internal_node]) continue;
+      ne.dst_node = idMap[m.internal_node];
+      ne.dst_port = m.internal_port;
+    }
+    nextEdges.push(ne);
+  }
+  for (const ie of sdef.edges || []) {
+    nextEdges.push({
+      ...deepClone(ie),
+      id: allocEdgeId(ie.id),
+      src_node: idMap[ie.src_node] || ie.src_node,
+      dst_node: idMap[ie.dst_node] || ie.dst_node,
+    });
+  }
+
+  scope.losses = scope.losses || [];
+  for (const lc of sdef.losses || []) {
+    scope.losses.push({ ...deepClone(lc), node_id: idMap[lc.node_id] || lc.node_id });
+  }
+  scope.nodes = scope.nodes.filter((n) => n.id !== sgNode.id).concat(unpackedNodes);
+  scope.edges = nextEdges;
+
+  state.selectedNodeIds = newSelected;
+  state.selectedNodeId = unpackedNodes[0]?.id || null;
+  state.selectedEdgeId = null;
+  runLiveErc();
+}
+
+function materializeAutoBridge(edgeId) {
+  const scope = getActiveGraphScope();
+  if (!scope) return;
+  const edge = scope.edges.find((e) => e.id === edgeId);
+  const vEdge = state.viewData?.edges?.find((e) => e.id === edgeId);
+  if (!edge || !vEdge?.autobridge) return;
+
+  pushUndo();
+  const pSrc = state.positions[edge.src_node] || { x: 100, y: 100 };
+  const pDst = state.positions[edge.dst_node] || { x: 400, y: 100 };
+  const midX = Math.round((pSrc.x + pDst.x) / 2);
+  const midY = Math.round((pSrc.y + pDst.y) / 2);
+  const bridgeId = nextNodeId("matrix_bridge");
+
+  scope.nodes.push({
+    id: bridgeId,
+    type: "matrix_bridge",
+    params: { out_dim: vEdge.autobridge.out_dim, bias: true },
+    position: { x: midX, y: midY },
+  });
+
+  scope.edges = scope.edges.filter((e) => e.id !== edgeId);
+  const eid1 = nextEdgeId();
+  scope.edges.push({
+    id: eid1,
+    src_node: edge.src_node,
+    src_port: edge.src_port,
+    dst_node: bridgeId,
+    dst_port: "x",
+    edge_kind: edge.edge_kind || "signal",
+    bridge: "none",
+    stop_grad: Boolean(edge.stop_grad),
+    watch_grad: Boolean(edge.watch_grad),
+  });
+  const eid2 = nextEdgeId();
+  scope.edges.push({
+    id: eid2,
+    src_node: bridgeId,
+    src_port: "out",
+    dst_node: edge.dst_node,
+    dst_port: edge.dst_port,
+    edge_kind: "signal",
+    bridge: "none",
+    stop_grad: false,
+    watch_grad: false,
+  });
+
+  state.selectedEdgeId = null;
+  state.selectedNodeId = bridgeId;
+  state.selectedNodeIds = new Set([bridgeId]);
+  runLiveErc();
 }
 
 function summarizeParams(type, params) {
@@ -1067,7 +1443,7 @@ function summarizeParams(type, params) {
   return pick.length ? pick.join(" · ") : "默认参数";
 }
 
-const CAT_ZH = { source: "数据源", backbone: "主干", op: "算子", bridge: "桥接", loss: "目标", output: "输出" };
+const CAT_ZH = { source: "数据源", backbone: "主干", op: "算子", bridge: "桥接", loss: "目标", output: "输出", group: "子图" };
 
 function escText(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -1300,13 +1676,14 @@ function startNodeRename(card, viewNode, draftNode) {
 function getPortPos(nodeId, portName, side, isTap = false) {
   const pos = state.positions[nodeId] || { x: 0, y: 0 };
   const el = state.nodeEls[nodeId];
-  if (!el) return { x: pos.x + (side === "left" ? 0 : NODE_W), y: pos.y + 60 };
+  const fallbackW = getNodeWidth(nodeId);
+  if (!el) return { x: pos.x + (side === "left" ? 0 : fallbackW), y: pos.y + 60 };
   const selector = side === "left"
     ? `.ports-col.left .port-row[data-port="${portName}"]`
     : `.ports-col.right .port-row[data-port="${portName}"][data-tap="${isTap ? "1" : "0"}"]`;
   const row = el.querySelector(selector);
   const yOffset = row ? (row.offsetTop + row.offsetHeight / 2) : 60;
-  const cardW = el.offsetWidth || NODE_W;
+  const cardW = el.offsetWidth || fallbackW;
   return {
     x: pos.x + (side === "left" ? 0 : cardW),
     y: pos.y + yOffset,
@@ -1377,6 +1754,7 @@ function renderEdges() {
       ev.stopPropagation();
       state.selectedEdgeId = edge.id;
       state.selectedNodeId = null;
+      state.selectedNodeIds.clear();
       renderEdges();
       renderNodeSelection();
       renderInspector();
@@ -1420,13 +1798,17 @@ function renderEdges() {
 
 function renderNodeSelection() {
   for (const [nid, card] of Object.entries(state.nodeEls)) {
-    card.classList.toggle("selected", state.selectedNodeId === nid);
+    card.classList.toggle("selected", state.selectedNodeId === nid || state.selectedNodeIds.has(nid));
   }
+  updateGroupButtons();
 }
 
 function renderGraph(data, opts = { fit: true, syncDraft: true }) {
   state.viewData = data;
   if (opts.syncDraft) {
+    state.subgraphPath = [];
+    state.selectedNodeIds.clear();
+    state.bridgeStats = {};
     state.draftGraph = {
       name: data.graph_name || "untitled_graph",
       nodes: data.nodes.map((n) => ({ id: n.id, type: n.type, params: deepClone(n.params || {}), position: { ...n.position }, label: n.label || null })),
@@ -1434,16 +1816,21 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
         id: e.id, src_node: e.src_node, src_port: e.src_port,
         dst_node: e.dst_node, dst_port: e.dst_port,
         edge_kind: e.edge_kind || "signal", bridge: e.bridge || "none",
+        bridge_init: e.bridge_init || null, bridge_bias_init: e.bridge_bias_init || null,
         stop_grad: Boolean(e.stop_grad), watch_grad: Boolean(e.watch_grad),
       })),
       losses: deepClone(data.losses || []),
       trainer: deepClone(data.trainer || {}),
+      subgraphs: deepClone(data.subgraphs || {}),
     };
     state.undoStack = [];
     state.redoStack = [];
     setDirty(false);
     updateHistoryButtons();
   }
+  renderBreadcrumb();
+  updateGroupButtons();
+  const activeScope = getActiveGraphScope();
 
   state.positions = {};
   state.nodeEls = {};
@@ -1483,7 +1870,7 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
     state.positions[node.id] = { ...node.position };
     const card = document.createElement("div");
     card.className = "node-card";
-    if (state.selectedNodeId === node.id) card.classList.add("selected");
+    if (state.selectedNodeId === node.id || state.selectedNodeIds.has(node.id)) card.classList.add("selected");
     if (errorNodes.has(node.id)) card.classList.add("erc-error");
     card.dataset.cat = node.category;
     card.dataset.id = node.id;
@@ -1553,17 +1940,23 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
     if (node.label) subParts.push(escText(titleZh));
     if (node.description || (comp && comp.description)) subParts.push(escText(node.description || comp.description));
 
+    const isSubgraph = node.type === "subgraph";
+    const paramsSummary = isSubgraph
+      ? `子图 ${escText(node.params?.subgraph_id || "-")} · 内部 ${node.subgraph_info?.node_count ?? 0} 节点 · ${node.subgraph_info?.edge_count ?? 0} 连线`
+      : summarizeParams(node.type, node.params);
+
     card.innerHTML = `
       <div class="node-head">
         <span class="node-title" title="${escText(node.id)}">${escText(headLabel)}</span>
         <span class="node-type" title="元件类型 ${escText(node.type)}">${escText(node.display_name || node.type)}</span>
         <span class="node-tools">
+          ${isSubgraph ? `<button type="button" class="node-tool-btn" data-act="enter" title="进入子图内部编辑">↹</button>` : ""}
           <button type="button" class="node-tool-btn" data-act="rename" title="重命名显示标签">✎</button>
-          <button type="button" class="node-tool-btn ${quickOpen ? "on" : ""}" data-act="params" title="展开/收起快速参数编辑">⚙</button>
+          ${isSubgraph ? "" : `<button type="button" class="node-tool-btn ${quickOpen ? "on" : ""}" data-act="params" title="展开/收起快速参数编辑">⚙</button>`}
         </span>
       </div>
       ${subParts.length ? `<div class="node-sub"><span class="node-sub-desc">${subParts.join(" · ")}</span></div>` : ""}
-      <div class="node-params">${summarizeParams(node.type, node.params)}</div>
+      <div class="node-params">${paramsSummary}</div>
       <div class="node-ports">
         <div class="ports-col left">${inHtml}</div>
         <div class="ports-col right">${outHtml}${tapHtml}</div>
@@ -1572,16 +1965,21 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
       ${footerHtml}
     `;
 
-    const draftNode = state.draftGraph ? state.draftGraph.nodes.find((n) => n.id === node.id) : null;
+    const draftNode = activeScope ? activeScope.nodes.find((n) => n.id === node.id) : null;
     card.querySelectorAll(".node-tool-btn").forEach((btn) => {
       btn.addEventListener("mousedown", (ev) => { ev.stopPropagation(); ev.preventDefault(); });
       btn.addEventListener("click", (ev) => {
         ev.stopPropagation();
+        if (btn.dataset.act === "enter") {
+          enterSubgraph(node.id);
+          return;
+        }
         if (btn.dataset.act === "rename") {
           startNodeRename(card, node, draftNode);
           return;
         }
         state.selectedNodeId = node.id;
+        state.selectedNodeIds = new Set([node.id]);
         state.selectedEdgeId = null;
         state.expandedParams[node.id] = !state.expandedParams[node.id];
         renderNodeSelection();
@@ -1627,7 +2025,14 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
       if (ev.target.closest(".port-dot")) return;
       if (ev.target.closest(".node-quick") || ev.target.closest(".node-tool-btn") || ev.target.closest(".node-label-input")) return;
       ev.stopPropagation();
-      state.selectedNodeId = node.id;
+      if (ev.shiftKey) {
+        if (state.selectedNodeIds.has(node.id)) state.selectedNodeIds.delete(node.id);
+        else state.selectedNodeIds.add(node.id);
+        state.selectedNodeId = state.selectedNodeIds.size === 1 ? Array.from(state.selectedNodeIds)[0] : node.id;
+      } else {
+        state.selectedNodeId = node.id;
+        state.selectedNodeIds = new Set([node.id]);
+      }
       state.selectedEdgeId = null;
       renderNodeSelection();
       renderEdges();
@@ -1636,17 +2041,29 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
 
     card.addEventListener("dblclick", (ev) => {
       ev.stopPropagation();
+      if (node.type === "subgraph") {
+        enterSubgraph(node.id);
+        return;
+      }
       state.selectedNodeId = node.id;
+      state.selectedNodeIds = new Set([node.id]);
       state.selectedEdgeId = null;
+      renderNodeSelection();
       renderInspector();
       switchTab("inspector");
     });
 
-    // 节点头拖拽移动
+    // 节点头拖拽移动（支持多选成组拖拽）
     const head = card.querySelector(".node-head");
     head.addEventListener("mousedown", (ev) => {
       ev.stopPropagation();
-      state.selectedNodeId = node.id;
+      if (!ev.shiftKey && !state.selectedNodeIds.has(node.id)) {
+        state.selectedNodeId = node.id;
+        state.selectedNodeIds = new Set([node.id]);
+      } else if (ev.shiftKey) {
+        state.selectedNodeIds.add(node.id);
+        state.selectedNodeId = node.id;
+      }
       state.selectedEdgeId = null;
       renderNodeSelection();
       renderEdges();
@@ -1654,30 +2071,39 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
 
       const startX = ev.clientX;
       const startY = ev.clientY;
-      const origX = state.positions[node.id].x;
-      const origY = state.positions[node.id].y;
+      const dragIds = state.selectedNodeIds.has(node.id) ? Array.from(state.selectedNodeIds) : [node.id];
+      const origPos = {};
+      for (const id of dragIds) {
+        if (state.positions[id]) origPos[id] = { ...state.positions[id] };
+      }
       let moved = false;
 
       const onMove = (mv) => {
         const dx = (mv.clientX - startX) / state.scale;
         const dy = (mv.clientY - startY) / state.scale;
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
-        const nx = Math.round(origX + dx);
-        const ny = Math.round(origY + dy);
-        state.positions[node.id].x = nx;
-        state.positions[node.id].y = ny;
-        card.style.left = `${nx}px`;
-        card.style.top = `${ny}px`;
+        for (const id of dragIds) {
+          if (!origPos[id]) continue;
+          const nx = Math.round(origPos[id].x + dx);
+          const ny = Math.round(origPos[id].y + dy);
+          state.positions[id].x = nx;
+          state.positions[id].y = ny;
+          const el = state.nodeEls[id];
+          if (el) { el.style.left = `${nx}px`; el.style.top = `${ny}px`; }
+        }
         renderEdges();
         renderMinimap();
       };
       const onUp = () => {
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
-        if (moved && state.draftGraph) {
+        const scope = getActiveGraphScope();
+        if (moved && scope) {
           pushUndo();
-          const dn = state.draftGraph.nodes.find((n) => n.id === node.id);
-          if (dn) dn.position = { ...state.positions[node.id] };
+          for (const id of dragIds) {
+            const dn = scope.nodes.find((n) => n.id === id);
+            if (dn && state.positions[id]) dn.position = { ...state.positions[id] };
+          }
         }
       };
       window.addEventListener("mousemove", onMove);
@@ -1713,15 +2139,16 @@ function renderGraph(data, opts = { fit: true, syncDraft: true }) {
 
           const targetEl = document.elementFromPoint(up.clientX, up.clientY);
           const inRow = targetEl?.closest?.('.ports-col.left .port-row');
-          if (inRow && state.wireDrag && inRow.dataset.node !== state.wireDrag.srcNode) {
+          const scope = getActiveGraphScope();
+          if (scope && inRow && state.wireDrag && inRow.dataset.node !== state.wireDrag.srcNode) {
             const dstNode = inRow.dataset.node;
             const dstPort = inRow.dataset.port;
             pushUndo();
             // 替换目标单输入口的已有连线
-            state.draftGraph.edges = state.draftGraph.edges.filter(
+            scope.edges = scope.edges.filter(
               (e) => !(e.dst_node === dstNode && e.dst_port === dstPort)
             );
-            state.draftGraph.edges.push({
+            scope.edges.push({
               id: nextEdgeId(),
               src_node: state.wireDrag.srcNode,
               src_port: state.wireDrag.srcPort,
@@ -1767,15 +2194,48 @@ function edgeGradLiveHtml(edge) {
     + `<span class="en-name">(${g.shape.join(",")})</span>`;
 }
 
+function edgeAutoBridgeLiveHtml(edge, vEdge) {
+  const ab = vEdge?.autobridge;
+  if (!ab) return "";
+  const bs = state.bridgeStats ? state.bridgeStats[edge.id] : null;
+  const liveTxt = bs
+    ? `<span>‖W‖=${Number(bs.norm).toFixed(3)}</span><span>μ=${Number(bs.mean).toFixed(4)}</span>${bs.grad_norm !== null && bs.grad_norm !== undefined ? `<span>∇W=${Number(bs.grad_norm).toFixed(3)}</span>` : ""}`
+    : `<span style="color:var(--muted)">训练后显示实时权重范数</span>`;
+  return `
+    <div class="form-row">
+      <label>AutoBridge 投影层详情</label>
+      <div class="autobridge-card">
+        <div class="autobridge-meta">${escText(ab.module_type)} · ${ab.in_dim} → ${ab.out_dim} · ${ab.param_count} 参数</div>
+        <div class="pf" style="margin-bottom:2px">
+          <div class="pf-head"><span class="pf-name">bridge_init</span><span class="pf-desc">权重初始化策略</span></div>
+          <div class="pf-body">
+            <select id="edgeBridgeInitSel">
+              <option value="" ${!edge.bridge_init ? "selected" : ""}>default (PyTorch 默认)</option>
+              <option value="xavier_uniform" ${edge.bridge_init === "xavier_uniform" ? "selected" : ""}>xavier_uniform</option>
+              <option value="xavier_normal" ${edge.bridge_init === "xavier_normal" ? "selected" : ""}>xavier_normal</option>
+              <option value="kaiming_normal" ${edge.bridge_init === "kaiming_normal" ? "selected" : ""}>kaiming_normal</option>
+              <option value="orthogonal" ${edge.bridge_init === "orthogonal" ? "selected" : ""}>orthogonal</option>
+              <option value="zeros" ${edge.bridge_init === "zeros" ? "selected" : ""}>zeros</option>
+            </select>
+          </div>
+        </div>
+        <div class="edge-grad-live">${liveTxt}</div>
+        <button type="button" id="materializeBridgeBtn">物化为独立 MatrixBridge 节点</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderInspector() {
   const box = $("inspectorBody");
   if (!state.draftGraph) {
     box.innerHTML = `<div class="card" style="color:var(--muted);font-size:12px">请先加载或创建计算图</div>`;
     return;
   }
+  const scope = getActiveGraphScope();
 
-  if (state.selectedEdgeId) {
-    const edge = state.draftGraph.edges.find((e) => e.id === state.selectedEdgeId);
+  if (state.selectedEdgeId && scope) {
+    const edge = scope.edges.find((e) => e.id === state.selectedEdgeId);
     const vEdge = state.viewData?.edges?.find((e) => e.id === state.selectedEdgeId);
     const srcNodeType = state.viewData?.nodes?.find((n) => n.id === edge?.src_node)?.type || "";
     const dstNodeType = state.viewData?.nodes?.find((n) => n.id === edge?.dst_node)?.type || "";
@@ -1799,6 +2259,7 @@ function renderInspector() {
               <option value="none" ${edge.bridge === "none" ? "selected" : ""}>none（严格报错）</option>
             </select>
           </div>
+          ${edgeAutoBridgeLiveHtml(edge, vEdge)}
           <div class="form-row">
             <label>梯度控制</label>
             <div class="edge-grad-box">
@@ -1823,6 +2284,18 @@ function renderInspector() {
         edge.bridge = ev.target.value;
         runLiveErc();
       });
+      const bInitSel = $("edgeBridgeInitSel");
+      if (bInitSel) {
+        bInitSel.addEventListener("change", (ev) => {
+          pushUndo();
+          edge.bridge_init = ev.target.value || null;
+          runLiveErc();
+        });
+      }
+      const matBtn = $("materializeBridgeBtn");
+      if (matBtn) {
+        matBtn.addEventListener("click", () => materializeAutoBridge(edge.id));
+      }
       $("edgeStopGradChk").addEventListener("change", (ev) => {
         pushUndo();
         edge.stop_grad = ev.target.checked;
@@ -1839,11 +2312,74 @@ function renderInspector() {
     }
   }
 
-  if (state.selectedNodeId) {
-    const node = state.draftGraph.nodes.find((n) => n.id === state.selectedNodeId);
+  if (state.selectedNodeIds.size >= 2 && scope) {
+    const ids = Array.from(state.selectedNodeIds);
+    box.innerHTML = `
+      <div class="card">
+        <div class="card-title"><span>多选节点</span><span class="card-title-sub">已选 ${ids.length} 个</span></div>
+        <div class="hint-text" style="margin-bottom:8px">可将所选节点打包为可复用子图（自动识别跨界输入/输出/抽头端口）。</div>
+        <div style="font-size:11px;font-family:ui-monospace,monospace;color:#c9d1d9;margin-bottom:10px">${ids.map(escText).join(", ")}</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button id="insGroupBtn" class="primary">封装为子图 (Ctrl+G)</button>
+          <button id="delSelectedBtn" class="danger">删除所选节点 (Del)</button>
+        </div>
+      </div>
+    `;
+    $("insGroupBtn").addEventListener("click", groupSelectedNodes);
+    $("delSelectedBtn").addEventListener("click", deleteSelected);
+    return;
+  }
+
+  if (state.selectedNodeId && scope) {
+    const node = scope.nodes.find((n) => n.id === state.selectedNodeId);
     if (node) {
+      if (node.type === "subgraph") {
+        const sgId = node.params?.subgraph_id;
+        const sdef = state.draftGraph.subgraphs?.[sgId];
+        const viewNode = (state.viewData?.nodes || []).find((n) => n.id === node.id) || {};
+        box.innerHTML = `
+          <div class="card comp-card">
+            <div class="comp-head">
+              <div>
+                <div class="comp-title">${escText(sdef?.title || sdef?.name || "子图封装")}</div>
+                <div class="comp-en">subgraph · ${escText(sgId || "-")}</div>
+              </div>
+              <span class="comp-cat">子图</span>
+            </div>
+            <div class="comp-desc">${escText(sdef?.description || "复合子图节点（编译期自动递归展开为原生 DAG）。")}</div>
+            <div style="display:flex;gap:6px;margin-top:4px">
+              <button id="insEnterSgBtn" class="primary" style="flex:1">进入子图编辑</button>
+              <button id="insUngroupBtn" style="flex:1">解散子图</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span>节点标识</span><span class="card-title-sub">子图实例</span></div>
+            <div class="comp-node-id" style="margin-bottom:8px">节点 id <b>${escText(node.id)}</b> · 内部 ${sdef?.nodes?.length ?? 0} 节点</div>
+            <div class="pf" style="margin-bottom:0">
+              <div class="pf-head"><span class="pf-name">显示标签</span><span class="pf-desc">留空则显示子图名</span></div>
+              <div class="pf-body"><input id="nodeLabelInput" type="text" value="${escText(node.label || "")}" placeholder="${escText(sdef?.title || sgId || "Subgraph")}" /></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title"><span>暴露端口</span><span class="card-title-sub">输入 ${(viewNode.inputs || []).length} · 输出 ${(viewNode.outputs || []).length} · 抽头 ${(viewNode.taps || []).length}</span></div>
+            <div class="hint-text">进入子图修改内部结构后，返回主图即可自动生效。</div>
+          </div>
+          <button id="delSelectedBtn" class="danger" style="width:100%">删除此子图节点 (Del)</button>
+        `;
+        $("insEnterSgBtn").addEventListener("click", () => enterSubgraph(node.id));
+        $("insUngroupBtn").addEventListener("click", ungroupSelectedNode);
+        $("nodeLabelInput").addEventListener("change", (ev) => {
+          const next = ev.target.value.trim();
+          pushUndo();
+          node.label = next ? next : null;
+          scheduleLiveErc();
+        });
+        $("delSelectedBtn").addEventListener("click", deleteSelected);
+        return;
+      }
+
       const comp = state.components[node.type] || { display_name: node.type, title: node.type, description: "", params: [], inputs: [], outputs: [], taps: [] };
-      const lossCfg = state.draftGraph.losses.find((l) => l.node_id === node.id);
+      const lossCfg = (scope.losses || []).find((l) => l.node_id === node.id);
       const viewNode = (state.viewData?.nodes || []).find((n) => n.id === node.id) || {};
       const titleZh = comp.title || comp.display_name || node.type;
 
@@ -2022,7 +2558,11 @@ function renderInspector() {
   $("trGraphName").addEventListener("change", (e) => { pushUndo(); state.draftGraph.name = e.target.value; });
   $("trOpt").addEventListener("change", (e) => { pushUndo(); tr.optimizer = e.target.value; });
   $("trLr").addEventListener("change", (e) => { pushUndo(); tr.lr = parseFloat(e.target.value); });
-  $("trBs").addEventListener("change", (e) => { pushUndo(); tr.batch_size = parseInt(e.target.value, 10); });
+  $("trBs").addEventListener("change", (e) => {
+    pushUndo();
+    tr.batch_size = Math.max(1, parseInt(e.target.value, 10) || 1);
+    scheduleLiveErc();
+  });
   $("trEp").addEventListener("change", (e) => { pushUndo(); tr.epochs = parseInt(e.target.value, 10); });
 }
 
@@ -2033,8 +2573,10 @@ function renderMinimap() {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const id of keys) {
     const p = state.positions[id];
+    const w = getNodeWidth(id);
+    const h = state.nodeEls[id]?.offsetHeight || 130;
     minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x + NODE_W); maxY = Math.max(maxY, p.y + 130);
+    maxX = Math.max(maxX, p.x + w); maxY = Math.max(maxY, p.y + h);
   }
   const pad = 80;
   minX -= pad; minY -= pad; maxX += pad; maxY += pad;
@@ -2046,9 +2588,9 @@ function renderMinimap() {
     if (!p) continue;
     const rx = (p.x - minX) * s;
     const ry = (p.y - minY) * s;
-    const rw = Math.max(6, NODE_W * s);
-    const rh = Math.max(4, 100 * s);
-    const col = n.category === "source" ? "#3b82f6" : n.category === "loss" ? "#f43f5e" : n.category === "backbone" ? "#10b981" : n.category === "output" ? "#06b6d4" : "#a855f7";
+    const rw = Math.max(6, getNodeWidth(n.id) * s);
+    const rh = Math.max(4, (state.nodeEls[n.id]?.offsetHeight || 100) * s);
+    const col = n.category === "source" ? "#3b82f6" : n.category === "loss" ? "#f43f5e" : n.category === "backbone" ? "#10b981" : n.category === "output" ? "#06b6d4" : n.category === "group" ? "#8b5cf6" : "#a855f7";
     html += `<rect x="${rx.toFixed(1)}" y="${ry.toFixed(1)}" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}" fill="${col}" fill-opacity="0.7" rx="1.5" />`;
   }
   const wrap = $("canvasWrap");
@@ -2066,9 +2608,10 @@ function fitView() {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const id of keys) {
     const p = state.positions[id];
+    const w = getNodeWidth(id);
     const h = state.nodeEls[id]?.offsetHeight || 130;
     minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x + NODE_W); maxY = Math.max(maxY, p.y + h);
+    maxX = Math.max(maxX, p.x + w); maxY = Math.max(maxY, p.y + h);
   }
   const wrap = $("canvasWrap");
   const pad = 48;
@@ -2139,626 +2682,7 @@ function updateNodeLiveStats(nodeStats, tapStats) {
   emitEdgePulses(nodeStats, tapStats);
 }
 
-// 调色板映射 (0..255 -> [r, g, b])
-const COLORMAPS = {
-  viridis: [[68,1,84],[72,40,120],[62,73,137],[49,104,142],[38,130,142],[31,158,137],[53,183,121],[110,206,88],[181,222,43],[253,231,37]],
-  coolwarm: [[59,76,192],[98,130,234],[141,176,254],[184,208,249],[221,221,221],[245,196,173],[244,154,123],[222,96,77],[180,4,38]],
-  magma: [[0,0,4],[28,16,68],[79,18,123],[129,37,129],[181,54,122],[229,80,100],[251,135,97],[254,194,135],[252,253,191]],
-  grayscale: [[0,0,0],[255,255,255]],
-};
-
-function sampleColormap(name, v255) {
-  const stops = COLORMAPS[name] || COLORMAPS.viridis;
-  const t = Math.max(0, Math.min(1, v255 / 255));
-  const scaled = t * (stops.length - 1);
-  const idx = Math.min(stops.length - 2, Math.floor(scaled));
-  const frac = scaled - idx;
-  const c0 = stops[idx], c1 = stops[idx + 1];
-  return [
-    Math.round(c0[0] + (c1[0] - c0[0]) * frac),
-    Math.round(c0[1] + (c1[1] - c0[1]) * frac),
-    Math.round(c0[2] + (c1[2] - c0[2]) * frac),
-  ];
-}
-
-function drawHeatmapCanvas(canvas, heatmap) {
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-  if (!heatmap || !heatmap.rows || !heatmap.cols) return;
-
-  const { rows, cols, data, colormap, vmin, vmax } = heatmap;
-  const off = document.createElement("canvas");
-  off.width = cols;
-  off.height = rows;
-  const octx = off.getContext("2d");
-  const img = octx.createImageData(cols, rows);
-  for (let i = 0; i < data.length; i++) {
-    const [r, g, b] = sampleColormap(colormap, data[i]);
-    const p = i * 4;
-    img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b; img.data[p + 3] = 255;
-  }
-  octx.putImageData(img, 0, 0);
-
-  const barH = 16;
-  const plotH = H - barH - 4;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(off, 0, 0, W, plotH);
-
-  // 底部色标条
-  const grad = ctx.createLinearGradient(6, 0, W - 6, 0);
-  const stops = COLORMAPS[colormap] || COLORMAPS.viridis;
-  stops.forEach((rgb, idx) => grad.addColorStop(idx / (stops.length - 1), `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`));
-  ctx.fillStyle = grad;
-  ctx.fillRect(6, plotH + 3, W - 12, 5);
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "9px ui-monospace, monospace";
-  ctx.textBaseline = "top";
-  ctx.textAlign = "left";
-  ctx.fillText(vmin.toFixed(2), 6, plotH + 9);
-  ctx.textAlign = "right";
-  ctx.fillText(vmax.toFixed(2), W - 6, plotH + 9);
-  canvas._heatMeta = { rows, cols, data, vmin, vmax, plotH };
-}
-
-// 反向梯度视图：上半部分梯度分布热力图，下半部分梯度范数历史曲线
-function drawGradCanvas(canvas, grad) {
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-  canvas._heatMeta = null;
-
-  const heat = grad.heatmap;
-  const histLen = grad.norm_history || [];
-  const curveH = Math.max(38, Math.round(H * 0.36));
-  const heatH = Math.max(20, H - curveH - 16);
-
-  if (heat) {
-    const off = document.createElement("canvas");
-    off.width = heat.cols;
-    off.height = heat.rows;
-    const octx = off.getContext("2d");
-    const img = octx.createImageData(heat.cols, heat.rows);
-    for (let i = 0; i < heat.data.length; i++) {
-      const [r, g, b] = sampleColormap("coolwarm", heat.data[i]);
-      const p = i * 4;
-      img.data[p] = r; img.data[p + 1] = g; img.data[p + 2] = b; img.data[p + 3] = 255;
-    }
-    octx.putImageData(img, 0, 0);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(off, 0, 0, W, heatH);
-    canvas._heatMeta = { rows: heat.rows, cols: heat.cols, data: heat.data, vmin: heat.vmin, vmax: heat.vmax, plotH: heatH };
-  }
-
-  // 梯度范数曲线
-  const mL = 8, mR = 8, mT = heatH + 6, mB = 12;
-  const pw = W - mL - mR, ph = Math.max(10, H - mT - mB);
-  const vals = histLen.length ? histLen : [0];
-  let minY = Math.min(...vals), maxY = Math.max(...vals);
-  if (minY === maxY) { minY = Math.max(0, minY - 0.5); maxY += 0.5; }
-  const mapX = (i) => vals.length === 1 ? mL + pw / 2 : mL + (i / (vals.length - 1)) * pw;
-  const mapY = (v) => mT + ph - ((v - minY) / Math.max(1e-8, maxY - minY)) * ph;
-
-  ctx.strokeStyle = "#1e293b";
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(mL, mT + ph); ctx.lineTo(W - mR, mT + ph); ctx.stroke();
-
-  ctx.strokeStyle = "#22d3ee";
-  ctx.lineWidth = 1.6;
-  ctx.beginPath();
-  vals.forEach((v, i) => {
-    const x = mapX(i), y = mapY(v);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  ctx.fillStyle = "#e2e8f0";
-  ctx.font = "bold 12px ui-monospace, monospace";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.fillText(`∇n=${Number(grad.stats.norm).toFixed(3)}`, 8, heatH - 16);
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "9px ui-monospace, monospace";
-  ctx.textAlign = "right";
-  ctx.fillText(`σ=${Number(grad.stats.std).toFixed(3)}`, W - 8, heatH - 15);
-}
-
-function drawScalarCanvas(canvas, probe, histObj) {
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-  canvas._heatMeta = null;
-
-  const vals = histObj?.values || [];
-  const emas = histObj?.ema || [];
-  if (!vals.length) return;
-
-  let minY = Math.min(...vals), maxY = Math.max(...vals);
-  if (minY === maxY) { minY -= 0.5; maxY += 0.5; }
-  const pad = (maxY - minY) * 0.1;
-  minY -= pad; maxY += pad;
-
-  const mL = 8, mR = 8, mT = 26, mB = 14;
-  const pw = W - mL - mR, ph = H - mT - mB;
-  ctx.strokeStyle = "#1e293b";
-  ctx.lineWidth = 1;
-  for (let g = 0; g <= 2; g++) {
-    const gy = mT + (ph * g) / 2;
-    ctx.beginPath(); ctx.moveTo(mL, gy); ctx.lineTo(W - mR, gy); ctx.stroke();
-  }
-
-  const mapX = (i) => vals.length === 1 ? mL + pw / 2 : mL + (i / (vals.length - 1)) * pw;
-  const mapY = (v) => mT + ph - ((v - minY) / Math.max(1e-8, maxY - minY)) * ph;
-
-  ctx.strokeStyle = "#22d3ee";
-  ctx.lineWidth = 1.6;
-  ctx.beginPath();
-  vals.forEach((v, i) => {
-    const x = mapX(i), y = mapY(v);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  if (emas.length >= 2 && (probe.ema_alpha || 0) > 0) {
-    ctx.save();
-    ctx.setLineDash([4, 3]);
-    ctx.strokeStyle = "#fbbf24";
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    emas.forEach((v, i) => {
-      const x = mapX(i), y = mapY(v);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  ctx.fillStyle = "#e2e8f0";
-  ctx.font = "bold 14px ui-monospace, monospace";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.fillText(Number(probe.scalar).toFixed(4), 8, 5);
-
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "10px ui-monospace, monospace";
-  ctx.textAlign = "right";
-  ctx.fillText(`${probe.reduce || "val"} · n=${vals.length}`, W - 8, 7);
-}
-
-function drawImagesCanvas(canvas, images) {
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-  canvas._heatMeta = null;
-  if (!images || !images.samples || !images.samples.length) return;
-
-  const { count, channels, height, width, samples } = images;
-  const cols = count === 1 ? 1 : 2;
-  const rows = Math.ceil(count / cols);
-  const gap = 4;
-  const cellW = Math.floor((W - gap * (cols + 1)) / cols);
-  const cellH = Math.floor((H - gap * (rows + 1)) / rows);
-  ctx.imageSmoothingEnabled = false;
-
-  samples.forEach((flat, idx) => {
-    const off = document.createElement("canvas");
-    off.width = width;
-    off.height = height;
-    const octx = off.getContext("2d");
-    const img = octx.createImageData(width, height);
-    for (let i = 0; i < width * height; i++) {
-      const p = i * 4;
-      if (channels === 3) {
-        img.data[p] = flat[i * 3]; img.data[p + 1] = flat[i * 3 + 1]; img.data[p + 2] = flat[i * 3 + 2];
-      } else {
-        const v = flat[i];
-        img.data[p] = v; img.data[p + 1] = v; img.data[p + 2] = v;
-      }
-      img.data[p + 3] = 255;
-    }
-    octx.putImageData(img, 0, 0);
-    const gx = idx % cols, gy = Math.floor(idx / cols);
-    const scale = Math.min(cellW / width, cellH / height);
-    const dw = Math.max(1, Math.floor(width * scale));
-    const dh = Math.max(1, Math.floor(height * scale));
-    const dx = gap + gx * (cellW + gap) + Math.floor((cellW - dw) / 2);
-    const dy = gap + gy * (cellH + gap) + Math.floor((cellH - dh) / 2);
-    ctx.drawImage(off, dx, dy, dw, dh);
-  });
-}
-
-function drawHistogramCanvas(canvas, hist) {
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-  canvas._heatMeta = null;
-  if (!hist || !hist.counts || !hist.counts.length) return;
-  const counts = hist.counts;
-  const maxC = Math.max(1, ...counts);
-  const mL = 8, mR = 8, mT = 10, mB = 18;
-  const bw = (W - mL - mR) / counts.length;
-  const ph = H - mT - mB;
-  counts.forEach((c, idx) => {
-    const bh = (c / maxC) * ph;
-    ctx.fillStyle = "#06b6d4";
-    ctx.fillRect(mL + idx * bw + 1, mT + ph - bh, Math.max(2, bw - 2), bh);
-  });
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "9px ui-monospace, monospace";
-  ctx.textBaseline = "bottom";
-  ctx.textAlign = "left";
-  ctx.fillText(hist.vmin.toFixed(3), 6, H - 2);
-  ctx.textAlign = "right";
-  ctx.fillText(hist.vmax.toFixed(3), W - 6, H - 2);
-}
-
-function renderRawTableHtml(raw) {
-  if (!raw || !raw.values || !raw.values.length) return `<div style="color:var(--muted);font-size:11px">无数据</div>`;
-  const rowsHtml = raw.values.map((row) =>
-    `<tr>${row.map((v) => `<td>${v}</td>`).join("")}</tr>`
-  ).join("");
-  return `<div style="font-size:10px;color:var(--muted);margin-bottom:3px;font-family:ui-monospace,monospace">显示 ${raw.rows}×${raw.cols} / 原始 ${raw.total_rows}×${raw.total_cols}</div><table class="probe-raw-table">${rowsHtml}</table>`;
-}
-
-const GATE_COLORS = {
-  i: "#38bdf8",
-  f: "#fbbf24",
-  o: "#f472b6",
-  c: "#34d399",
-};
-
-function drawGateDynamicsCanvas(canvas, probe) {
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-  canvas._heatMeta = null;
-  canvas._trajMeta = null;
-  canvas._energyMeta = null;
-
-  const gd = probe.gate_dynamics;
-  if (!gd || !gd.gates || !Object.keys(gd.gates).length) {
-    canvas._gateMeta = null;
-    return;
-  }
-
-  const gates = gd.gates;
-  const keys = ["i", "f", "o", "c"].filter((k) => gates[k]);
-  const steps = Math.max(1, gd.steps || 1);
-
-  const mL = 16, mR = 8, mT = 18, mB = 14;
-  const stripRows = gd.strip_rows || [];
-  const hasStrip = stripRows.length > 0;
-  const stripH = hasStrip ? Math.min(Math.floor(H * 0.34), Math.max(26, stripRows.length * 4 + 8)) : 0;
-  const curveH = Math.max(30, H - mT - mB - stripH - (hasStrip ? 8 : 0));
-  const pw = Math.max(20, W - mL - mR);
-
-  // 背景参考线 0 / 0.5 / 1
-  ctx.strokeStyle = "#1e293b";
-  ctx.lineWidth = 1;
-  [0, 0.5, 1].forEach((lv) => {
-    const gy = mT + curveH * (1 - lv);
-    ctx.beginPath();
-    if (lv === 0.5) ctx.setLineDash([3, 3]);
-    else ctx.setLineDash([]);
-    ctx.moveTo(mL, gy);
-    ctx.lineTo(W - mR, gy);
-    ctx.stroke();
-  });
-  ctx.setLineDash([]);
-
-  const mapX = (t) => (steps === 1 ? mL + pw / 2 : mL + (t / (steps - 1)) * pw);
-
-  // c 单独归一化到 [0, 1] 以便叠加观察趋势，i/f/o 直接按 [0, 1] 物理值绘制
-  let cMin = -1, cMax = 1;
-  if (gates.c) {
-    const vals = gates.c.mean;
-    cMin = Math.min(...vals);
-    cMax = Math.max(...vals);
-    if (Math.abs(cMax - cMin) < 1e-5) { cMin -= 0.5; cMax += 0.5; }
-  }
-
-  keys.forEach((k) => {
-    const arr = gates[k].mean || [];
-    if (!arr.length) return;
-    ctx.strokeStyle = GATE_COLORS[k] || "#94a3b8";
-    ctx.lineWidth = k === "f" ? 2.0 : 1.5;
-    ctx.beginPath();
-    arr.forEach((v, idx) => {
-      const normY = k === "c" ? (v - cMin) / Math.max(1e-6, cMax - cMin) : Math.max(0, Math.min(1, v));
-      const x = mapX(idx);
-      const y = mT + curveH * (1 - normY);
-      if (idx === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-  });
-
-  // 顶部图例与饱和度提示
-  let lx = mL;
-  ctx.font = "10px ui-monospace, monospace";
-  ctx.textBaseline = "top";
-  ctx.textAlign = "left";
-  keys.forEach((k) => {
-    ctx.fillStyle = GATE_COLORS[k] || "#e2e8f0";
-    const g = gates[k];
-    const satPct = k === "c"
-      ? `|c|=${Number(g.abs_mean).toFixed(2)}`
-      : `${k}:${Math.round((g.sat_low + g.sat_high) * 100)}%sat`;
-    ctx.fillText(satPct, lx, 3);
-    lx += ctx.measureText(satPct).width + 8;
-  });
-  ctx.fillStyle = "#94a3b8";
-  ctx.textAlign = "right";
-  ctx.fillText(`L=${gd.valid_len}/${gd.total_len}`, W - mR, 3);
-
-  // 下方代表神经元门控时序条带热图
-  if (hasStrip) {
-    const sy = mT + curveH + 6;
-    const rows = stripRows.length;
-    const rowH = Math.max(1, stripH / rows);
-    const colW = pw / steps;
-    const labels = gd.strip_labels || [];
-    for (let r = 0; r < rows; r++) {
-      const rowData = stripRows[r];
-      const ry = sy + r * rowH;
-      if (labels[r]) {
-        ctx.fillStyle = GATE_COLORS[labels[r]] || "#94a3b8";
-        ctx.font = "9px ui-monospace, monospace";
-        ctx.textAlign = "left";
-        ctx.textBaseline = "top";
-        ctx.fillText(labels[r], 3, ry);
-      }
-      for (let c = 0; c < rowData.length; c++) {
-        const [cr, cg, cb] = sampleColormap("viridis", rowData[c]);
-        ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
-        ctx.fillRect(mL + c * colW, ry, Math.ceil(colW), Math.ceil(rowH));
-      }
-    }
-  }
-
-  canvas._gateMeta = { mL, pw, steps, gates, keys };
-}
-
-function drawTrajectoryCanvas(canvas, probe) {
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-  canvas._heatMeta = null;
-  canvas._gateMeta = null;
-  canvas._energyMeta = null;
-
-  const traj = probe.trajectory;
-  if (!traj || !traj.points || !traj.points.length) {
-    canvas._trajMeta = null;
-    return;
-  }
-
-  const pts = traj.points;
-  const mL = 12, mR = 12, mT = 20, mB = 14;
-  const pw = W - mL - mR, ph = H - mT - mB;
-
-  let xmin = traj.xmin, xmax = traj.xmax, ymin = traj.ymin, ymax = traj.ymax;
-  if (Math.abs(xmax - xmin) < 1e-5) { xmin -= 0.5; xmax += 0.5; }
-  if (Math.abs(ymax - ymin) < 1e-5) { ymin -= 0.5; ymax += 0.5; }
-  const padX = (xmax - xmin) * 0.14;
-  const padY = (ymax - ymin) * 0.14;
-  xmin -= padX; xmax += padX; ymin -= padY; ymax += padY;
-
-  const mapX = (x) => mL + ((x - xmin) / Math.max(1e-6, xmax - xmin)) * pw;
-  const mapY = (y) => mT + ph - ((y - ymin) / Math.max(1e-6, ymax - ymin)) * ph;
-
-  // 网格与零轴
-  ctx.strokeStyle = "#172033";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(mL, mT, pw, ph);
-  if (xmin < 0 && xmax > 0) {
-    const zx = mapX(0);
-    ctx.beginPath(); ctx.setLineDash([3, 3]); ctx.moveTo(zx, mT); ctx.lineTo(zx, mT + ph); ctx.stroke();
-  }
-  if (ymin < 0 && ymax > 0) {
-    const zy = mapY(0);
-    ctx.beginPath(); ctx.setLineDash([3, 3]); ctx.moveTo(mL, zy); ctx.lineTo(mL + pw, zy); ctx.stroke();
-  }
-  ctx.setLineDash([]);
-
-  const mapped = pts.map(([px, py]) => [mapX(px), mapY(py)]);
-
-  // 渐变轨迹线 (cyan -> amber -> pink)
-  for (let i = 0; i < mapped.length - 1; i++) {
-    const frac = i / Math.max(1, mapped.length - 2);
-    const r = Math.round(56 + (244 - 56) * frac);
-    const g = Math.round(189 + (114 - 189) * frac);
-    const b = Math.round(248 + (182 - 248) * frac);
-    ctx.strokeStyle = `rgb(${r},${g},${b})`;
-    ctx.lineWidth = 2.0;
-    ctx.beginPath();
-    ctx.moveTo(mapped[i][0], mapped[i][1]);
-    ctx.lineTo(mapped[i + 1][0], mapped[i + 1][1]);
-    ctx.stroke();
-  }
-
-  // 节点与起点/终点标记
-  mapped.forEach(([cx, cy], idx) => {
-    const isStart = idx === 0;
-    const isEnd = idx === mapped.length - 1;
-    ctx.fillStyle = isStart ? "#34d399" : (isEnd ? "#f472b6" : "rgba(226,232,240,0.65)");
-    ctx.beginPath();
-    ctx.arc(cx, cy, isStart || isEnd ? 4.2 : 2.0, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  if (mapped.length >= 1) {
-    ctx.font = "bold 9px ui-monospace, monospace";
-    ctx.textBaseline = "bottom";
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#34d399";
-    ctx.fillText("S", mapped[0][0] + 5, mapped[0][1] - 2);
-    ctx.fillStyle = "#f472b6";
-    const last = mapped[mapped.length - 1];
-    ctx.fillText("E", last[0] + 5, last[1] - 2);
-  }
-
-  // 顶部指标
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "10px ui-monospace, monospace";
-  ctx.textBaseline = "top";
-  ctx.textAlign = "left";
-  const evrTxt = traj.method === "pca" ? `PCA ${(traj.explained_var * 100).toFixed(0)}%` : "first2";
-  ctx.fillText(`${evrTxt} · len=${Number(traj.path_len).toFixed(2)}`, mL, 4);
-  ctx.textAlign = "right";
-  ctx.fillText(`n=${pts.length}`, W - mR, 4);
-
-  canvas._trajMeta = { mapped, pts };
-}
-
-function drawStepEnergyCanvas(canvas, probe) {
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-  canvas._heatMeta = null;
-  canvas._gateMeta = null;
-  canvas._trajMeta = null;
-
-  const se = probe.step_energy;
-  if (!se || !se.energy || !se.energy.length) {
-    canvas._energyMeta = null;
-    return;
-  }
-
-  const energy = se.energy;
-  const delta = se.delta || [];
-  const n = energy.length;
-  const maxVal = Math.max(1e-5, ...energy, ...delta);
-
-  const mL = 8, mR = 8, mT = 20, mB = 14;
-  const pw = W - mL - mR, ph = H - mT - mB;
-  const bw = pw / n;
-
-  // 背景基线
-  ctx.strokeStyle = "#1e293b";
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(mL, mT + ph); ctx.lineTo(W - mR, mT + ph); ctx.stroke();
-
-  // 能量柱状图
-  energy.forEach((val, idx) => {
-    const bh = (val / maxVal) * ph;
-    const isPeak = idx === se.peak_step;
-    ctx.fillStyle = isPeak ? "#fbbf24" : "rgba(56, 189, 248, 0.55)";
-    ctx.fillRect(mL + idx * bw + 1, mT + ph - bh, Math.max(2, bw - 2), bh);
-  });
-
-  // 步间跃迁折线 ||h_t - h_{t-1}||
-  if (delta.length >= 2) {
-    ctx.strokeStyle = "#f472b6";
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    delta.forEach((dv, idx) => {
-      const x = mL + (idx + 0.5) * bw;
-      const y = mT + ph - (dv / maxVal) * ph;
-      if (idx === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-  }
-
-  ctx.font = "10px ui-monospace, monospace";
-  ctx.textBaseline = "top";
-  ctx.textAlign = "left";
-  ctx.fillStyle = "#fbbf24";
-  ctx.fillText(`t*=${se.peak_step} (${Number(se.peak_val).toFixed(2)})`, mL, 4);
-  ctx.textAlign = "right";
-  ctx.fillStyle = "#94a3b8";
-  ctx.fillText(`decay=${Number(se.decay_ratio).toFixed(2)} · L=${se.valid_len}/${se.total_len}`, W - mR, 4);
-
-  canvas._energyMeta = { mL, bw, n, energy, delta };
-}
-
-function renderProbeIntoTarget(canvas, rawWrap, probe, histObj, forcedView) {
-  let view = forcedView && forcedView !== "auto" ? forcedView : probe.view;
-  if (view === "image" && !probe.images) view = "heatmap";
-  if (view === "gate_dynamics" && !probe.gate_dynamics) view = probe.view;
-  if (view === "trajectory" && !probe.trajectory) view = probe.view;
-  if (view === "step_energy" && !probe.step_energy) view = probe.view;
-  if (view === "grad" && !probe.grad) view = probe.view;
-
-  if (view === "raw") {
-    canvas.style.display = "none";
-    rawWrap.style.display = "block";
-    rawWrap.innerHTML = renderRawTableHtml(probe.raw);
-  } else {
-    canvas.style.display = "block";
-    rawWrap.style.display = "none";
-    if (view === "grad") drawGradCanvas(canvas, probe.grad);
-    else if (view === "gate_dynamics") drawGateDynamicsCanvas(canvas, probe);
-    else if (view === "trajectory") drawTrajectoryCanvas(canvas, probe);
-    else if (view === "step_energy") drawStepEnergyCanvas(canvas, probe);
-    else if (view === "scalar") drawScalarCanvas(canvas, probe, histObj);
-    else if (view === "image") drawImagesCanvas(canvas, probe.images);
-    else if (view === "hist") drawHistogramCanvas(canvas, probe.hist);
-    else drawHeatmapCanvas(canvas, probe.heatmap);
-  }
-}
-
-function renderProbeIntoCard(card, nid, probe) {
-  const probeBox = card.querySelector(".node-probe");
-  if (!probeBox || !probe) return;
-  const tag = probeBox.querySelector(".probe-tag");
-  const shapeTxt = probeBox.querySelector(".probe-shape-txt");
-  const meta = probeBox.querySelector(".probe-meta");
-  const canvas = probeBox.querySelector(".probe-canvas");
-  const rawWrap = probeBox.querySelector(".probe-raw-wrap");
-  if (tag) tag.textContent = probe.view;
-  if (shapeTxt) shapeTxt.textContent = `(${probe.shape.join(",")}) ${probe.dtype}`;
-  if (meta && probe.stats) {
-    let html = `<span>min ${probe.stats.min.toFixed(2)}</span><span>max ${probe.stats.max.toFixed(2)}</span><span>μ ${probe.stats.mean.toFixed(2)}</span>`;
-    if (probe.grad) {
-      html += `<span style="color:#22d3ee">∇ ${Number(probe.grad.stats.norm).toFixed(2)}</span>`;
-    }
-    meta.innerHTML = html;
-  }
-  renderProbeIntoTarget(canvas, rawWrap, probe, state.probeHistory[nid], "auto");
-}
-
-function handleProbeHover(ev, nid, canvas, hoverEl) {
-  if (!hoverEl) return;
-  const rect = canvas.getBoundingClientRect();
-  const x = (ev.clientX - rect.left) * (canvas.width / Math.max(1, rect.width));
-  const y = (ev.clientY - rect.top) * (canvas.height / Math.max(1, rect.height));
-
-  if (canvas._gateMeta) {
-    const gm = canvas._gateMeta;
-    const t = Math.max(0, Math.min(gm.steps - 1, Math.round(((x - gm.mL) / gm.pw) * Math.max(1, gm.steps - 1))));
-    const parts = gm.keys.map((k) => `${k}=${Number(gm.gates[k].mean[t] ?? 0).toFixed(3)}`);
-    hoverEl.textContent = `t=${t}: ${parts.join("  ")}`;
-    return;
-  }
-  if (canvas._trajMeta) {
-    const tm = canvas._trajMeta;
-    let bestIdx = 0, bestD = Infinity;
-    tm.mapped.forEach(([mx, my], idx) => {
-      const d = (mx - x) ** 2 + (my - y) ** 2;
-      if (d < bestD) { bestD = d; bestIdx = idx; }
-    });
-    const pt = tm.pts[bestIdx];
-    hoverEl.textContent = `t=${bestIdx}: (${pt[0].toFixed(3)}, ${pt[1].toFixed(3)})`;
-    return;
-  }
-  if (canvas._energyMeta) {
-    const em = canvas._energyMeta;
-    const t = Math.max(0, Math.min(em.n - 1, Math.floor((x - em.mL) / Math.max(1e-5, em.bw))));
-    hoverEl.textContent = `t=${t}: E=${Number(em.energy[t] ?? 0).toFixed(3)} · Δ=${Number(em.delta[t] ?? 0).toFixed(3)}`;
-    return;
-  }
-
-  const hm = canvas._heatMeta;
-  if (!hm) return;
-  if (y < 0 || y >= hm.plotH) return;
-  const c = Math.max(0, Math.min(hm.cols - 1, Math.floor((x / canvas.width) * hm.cols)));
-  const r = Math.max(0, Math.min(hm.rows - 1, Math.floor((y / hm.plotH) * hm.rows)));
-  const q = hm.data[r * hm.cols + c];
-  const val = hm.vmin + (q / 255) * (hm.vmax - hm.vmin);
-  hoverEl.textContent = `[${r}, ${c}] ≈ ${val.toFixed(4)}`;
-}
+// Canvas 探针绘制模块已拆至 /static/probe_canvas.js
 
 function openProbeModal(nid) {
   state.modalProbeId = nid;
@@ -3135,7 +3059,7 @@ function connectWS() {
     if (msg.type === "train_started") {
       state.history = []; state.lossSeries = {};
       state.probeHistory = {}; state.latestProbes = {};
-      state.gradStats = {};
+      state.gradStats = {}; state.bridgeStats = {};
       $("kpiVal").textContent = "-";
       setTrainButtons(true, false);
     } else if (msg.type === "step") {
@@ -3148,11 +3072,12 @@ function connectWS() {
       for (const k of Object.keys(msg.loss_dict || {})) state.lossSeries[k] = true;
       renderLossChart();
       state.gradStats = msg.grad_stats || {};
+      state.bridgeStats = msg.bridge_stats || {};
       updateNodeLiveStats(msg.node_stats, msg.tap_stats);
       refreshEdgeGradLabels();
       if (state.selectedEdgeId) {
         const gl = $("edgeGradLive");
-        const selEdge = state.draftGraph?.edges?.find((e) => e.id === state.selectedEdgeId);
+        const selEdge = getActiveGraphScope()?.edges?.find((e) => e.id === state.selectedEdgeId);
         if (gl && selEdge) gl.innerHTML = edgeGradLiveHtml(selEdge);
       }
       updateProbes(msg.probes);
@@ -3207,13 +3132,56 @@ function renderQuickSearchList(q) {
   });
 }
 
-// 画布交互
+// 画布交互（平移 + Shift 框选多选）
 const wrap = $("canvasWrap");
 wrap.addEventListener("mousedown", (ev) => {
-  if (ev.target.closest(".node-card") || ev.target.closest("#quickSearch") || ev.target.closest("#minimap")) return;
+  if (ev.target.closest(".node-card") || ev.target.closest("#quickSearch") || ev.target.closest("#minimap") || ev.target.closest("#subgraphBreadcrumb")) return;
   closeQuickSearch();
-  if (state.selectedNodeId || state.selectedEdgeId) {
+  if (ev.shiftKey) {
+    const wrapRect = wrap.getBoundingClientRect();
+    const box = $("marqueeBox");
+    const sx = ev.clientX - wrapRect.left;
+    const sy = ev.clientY - wrapRect.top;
+    box.style.left = `${sx}px`; box.style.top = `${sy}px`;
+    box.style.width = "0px"; box.style.height = "0px";
+    box.style.display = "block";
+    const onMove = (mv) => {
+      const cx = mv.clientX - wrapRect.left;
+      const cy = mv.clientY - wrapRect.top;
+      const x0 = Math.min(sx, cx), y0 = Math.min(sy, cy);
+      const w = Math.abs(cx - sx), h = Math.abs(cy - sy);
+      box.style.left = `${x0}px`; box.style.top = `${y0}px`;
+      box.style.width = `${w}px`; box.style.height = `${h}px`;
+    };
+    const onUp = (up) => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      box.style.display = "none";
+      const p1 = screenToStage(Math.min(ev.clientX, up.clientX), Math.min(ev.clientY, up.clientY));
+      const p2 = screenToStage(Math.max(ev.clientX, up.clientX), Math.max(ev.clientY, up.clientY));
+      const hit = new Set();
+      for (const [nid, pos] of Object.entries(state.positions)) {
+        const nw = getNodeWidth(nid);
+        const nh = state.nodeEls[nid]?.offsetHeight || 130;
+        if (pos.x + nw >= p1.x && pos.x <= p2.x && pos.y + nh >= p1.y && pos.y <= p2.y) {
+          hit.add(nid);
+        }
+      }
+      state.selectedNodeIds = hit;
+      state.selectedNodeId = hit.size === 1 ? Array.from(hit)[0] : null;
+      state.selectedEdgeId = null;
+      renderNodeSelection();
+      renderEdges();
+      renderInspector();
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return;
+  }
+
+  if (state.selectedNodeId || state.selectedNodeIds.size || state.selectedEdgeId) {
     state.selectedNodeId = null;
+    state.selectedNodeIds.clear();
     state.selectedEdgeId = null;
     renderNodeSelection();
     renderEdges();
@@ -3291,6 +3259,12 @@ window.addEventListener("keydown", (ev) => {
     redo();
     return;
   }
+  if (!editing && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "g") {
+    ev.preventDefault();
+    if (state.selectedNodeIds.size >= 2) groupSelectedNodes();
+    else ungroupSelectedNode();
+    return;
+  }
   if (!editing && (ev.key === "Delete" || ev.key === "Backspace")) {
     ev.preventDefault();
     deleteSelected();
@@ -3341,6 +3315,8 @@ $("exportYamlBtn").addEventListener("click", () => exportWorkflow("yaml"));
 $("deleteBtn").addEventListener("click", deleteCurrentGraph);
 $("undoBtn").addEventListener("click", undo);
 $("redoBtn").addEventListener("click", redo);
+$("groupBtn").addEventListener("click", groupSelectedNodes);
+$("ungroupBtn").addEventListener("click", ungroupSelectedNode);
 $("autoLayoutBtn").addEventListener("click", () => { pushUndo(); runLiveErc(true); });
 $("fitBtn").addEventListener("click", fitView);
 $("saveBtn").addEventListener("click", () => {

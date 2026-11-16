@@ -48,22 +48,25 @@ netpulse/
 │   │   ├── ir.py                    # Pydantic v2 图结构模型与 JSON/YAML 加载/保存 (to_file)
 │   │   ├── component.py             # BaseComponent 抽象基类（含 param_schema / display_name / description）
 │   │   ├── registry.py              # 注册表、describe_all() 元数据导出与 plugins 错误隔离加载
-│   │   ├── erc.py                   # ERC 静态检查、Meta 形状推导与 AutoBridgePlan
+│   │   ├── subgraph.py              # 子图递归展开引擎（add_graph_prefix 风格节点/边/端口重映射）
+│   │   ├── erc.py                   # ERC 静态检查、Meta 形状推导（联动 batch_size）与 AutoBridgePlan
 │   │   ├── compiler.py              # CompiledGraph(nn.Module)、_AutoBridgeModule 与 GraphCompiler
-│   │   └── trainer.py               # Trainer、优化器构建、批次转换、准确率追踪与 checkpoint 保存
+│   │   └── trainer.py               # Trainer、多 Source 协同训练、可扩展 metrics 与 checkpoint 保存
 │   ├── components/
 │   │   ├── __init__.py              # 导入全部内置元件完成默认注册
 │   │   ├── init_utils.py            # apply_init() 统一初始化工具
-│   │   ├── sources.py               # spiral_data, mnist_data (_SourceModule)
+│   │   ├── sources.py               # spiral_data, mnist_data, seq_wave_data, seq_forecast_data
 │   │   ├── layers.py                # 原子层: conv2d, pool2d, linear, activation, batch_norm2d, layer_norm, dropout
-│   │   ├── backbones.py             # 宏模块: cnn_block, mlp_block
-│   │   ├── ops.py                   # flatten, global_avg_pool, matrix_bridge, tensor_add
-│   │   └── losses.py                # cross_entropy_loss, activation_reg_loss
+│   │   ├── backbones.py             # 宏模块: cnn_block, mlp_block, lstm
+│   │   ├── ops.py                   # flatten, global_avg_pool, image_to_seq, seq_pool, matrix_bridge, tensor_add
+│   │   ├── losses.py                # cross_entropy_loss, activation_reg_loss, mse_loss
+│   │   └── outputs.py               # monitor, scalar_watch, heatmap_preview, tensor_peek, gate_dynamics, hidden_trajectory, step_energy
 │   └── webui/
 │       ├── __init__.py
-│       ├── runner.py                # LiveTrainRunner: 后台调速训练线程与逐节点统计采集
-│       ├── server.py                # aiohttp HTTP + WebSocket 服务端（/api/components, /api/erc/check, /api/graph/save 等）
-│       └── index.html               # 零构建交互式节点编辑 IDE、动态参数表单、Minimap、粒子数据流与 SVG Loss 曲线
+│       ├── runner.py                # LiveTrainRunner: 后台调速训练、多 Source 遥测、bridge_stats 与子图回映
+│       ├── server.py                # aiohttp HTTP + WebSocket 服务端（/static 静态路由、/api/erc/check 子图下钻）
+│       ├── static/probe_canvas.js   # 独立拆出的 Canvas 探针绘图模块
+│       └── index.html               # 零构建交互式节点编辑 IDE、子图框选下钻、Minimap 与 SVG Loss 曲线
 ├── examples/
 │   ├── spiral_quickstart.json       # 4 节点极速合成螺旋集闭环
 │   ├── mnist_tap_reg.json           # CNNBlock + Hook Tap + MatrixBridge + 正交正则闭环
@@ -89,11 +92,13 @@ netpulse/
 
 ### 3.1 编译期（`run_erc` -> `GraphCompiler.compile`）
 
-1. **图校验（`netpulse/core/erc.py`）**：
+1. **图展开与校验（`netpulse/core/subgraph.py`、`erc.py`）**：
+   - 若图包含 `subgraphs` 或 `type == "subgraph"` 节点，先经 `expand_graph()` 递归展平为标准 `GraphIR`（检测 `SUBGRAPH_CYCLE`、`UNKNOWN_SUBGRAPH`、`INVALID_SUBGRAPH_MAPPING`），并保留 `flat_to_outer` / `outer_port_targets` 回映表。
    - 验证节点 ID 唯一性、元件已在 `ComponentRegistry` 注册。
    - 调用 `cls.declare_ports(node.params)` 获取静态签名 `ComponentSignature`。
    - 检查所有边引用的节点、输出端口 / Tap 名称、目标输入端口、必填端口连通性及单输入唯一性。
    - Kahn 算法执行拓扑排序并检测有向环（`CYCLE_DETECTED`）。
+   - 联动 `graph.trainer.batch_size` 注入 `source` 节点 Meta 推导，并在 `batch_size < 2` 时拦截 `BatchNorm2d`（`BATCH_SIZE_TOO_SMALL_FOR_BN`）或警告 `orthogonal` 正则退化（`DEGENERATE_ORTHOGONAL_REG_BS1`）。
 2. **Meta Device 形状推导与 AutoBridge**：
    - 按 `topo_order` 遍历每个节点，对每个输入端口检查 `Rank`、`Layout`、`require_mask`。
    - 若组件实现了 `expected_input_spec(params, port_name, actual, resolved_in_specs)` 并返回固定期望尺寸，且与上游特征维不一致：
@@ -138,7 +143,7 @@ netpulse/
 1. **Python 运行环境**：当前开发主机使用 `~/miniconda3/envs/yuki/bin/python`（含 `torch 2.13.0+cpu`、`pydantic`、`pyyaml`、`aiohttp`、`pytest`）。
 2. **Meta 初始化安全**：在 `init_utils.apply_init()` 中必须保留 `device.type != "meta"` 判断；新增带权重初始化的元件时应复用 `apply_init()`，避免在 Meta 推导期触发非法 tensor 写入。
 3. **无 torchvision 依赖原则**：`MNISTData` 通过标准库 `urllib` + `gzip` + `struct` 直接解析 idx-ubyte 缓存至 `.cache/mnist`，保证核心运行时极简。
-4. **自定义元件规范**：在 `plugins/*.py` 或 `plugins/*/__init__.py` 中继承 `BaseComponent`，使用 `@register_component("<type_id>")` 装饰；`declare_ports(params)` 只能依赖 `params`，不得依赖输入张量维度；可选覆盖 `param_schema()`、`display_name`、`description` 供 WebUI 表单渲染；`build(params, in_specs)` 根据 `in_specs` 构建 `nn.Module`，输入/输出统一为 `dict[str, Signal]`。
+1. **自定义元件规范**：在 `plugins/*.py` 或 `plugins/*/__init__.py` 中继承 `BaseComponent`，使用 `@register_component("<type_id>")` 装饰；`declare_ports(params)` 只能依赖 `params`，不得依赖输入张量维度；可选覆盖 `param_schema()`、`display_name`、`description` 供 WebUI 表单渲染，`build(params, in_specs)` 根据 `in_specs` 构建 `nn.Module`；Loss 类插件可覆盖 `compute_metrics(params, inputs)` 接入 `Trainer` / `WebUI` 准确率等指标聚合。
 5. **验收命令**：
    - 全量测试：`~/miniconda3/envs/yuki/bin/python -m pytest tests -v`（当前 13 项全通过）。
    - 启动 WebUI：`~/miniconda3/envs/yuki/bin/python -m netpulse.cli serve --host 127.0.0.1 --port 8765`。

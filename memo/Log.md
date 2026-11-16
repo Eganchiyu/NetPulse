@@ -86,3 +86,10 @@
 - 测试：新增 `tests/test_grad_control.py`（6 项），含「阻断后主干梯度与无正则节点完全一致」的解耦验证与探针梯度快照验证；`pytest tests -q` 26 passed（`test_atomic_layers::test_mnist_atomic_e2e` 与 `test_lstm_and_probes::test_lstm_forecast_classic_and_templates_erc` 的既有 flaky 失败与本次改动无关，已在 baseline 复现）。
 - jsdom 冒烟：连线复选框开→草稿边字段更新→虚线 ⊘ 标签→写入 gradStats 后标签显示 ∇2.35→探针 meta/弹窗梯度视图，无 JS 报错。
 - 文档：`README.md` 新增「梯度控制」特性段；`docs/ARCHITECTURE.md` 新增 §3.2.1 梯度控制与梯度总线，并更新 WebUI 数据流的 `grad_stats` 说明。
+
+## 2026-11-16（补齐剩余架构建议：子图封装、ERC/Trainer 契约、AutoBridge 与前端模块化）
+- **子图封装（Subgraph / Group Node）**：`ir.py` 新增 `SubgraphPortMapping`、`SubgraphDef` 与 `GraphIR.subgraphs`；新增 `core/subgraph.py` 递归展开引擎（支持多层嵌套、`edge_kind` 透传、环/缺失/非法映射检查及 `flat_to_outer`/`outer_port_targets` 回映）；`erc.py`/`compiler.py`/`server.py`/`runner.py` 全链路衔接；前端支持 `Shift+拖框/点击` 多选、`Ctrl+G` 封装为子图、双击下钻面包屑编辑与解散还原。
+- **ERC 与 Trainer 契约对齐**：`erc.py` 将 `trainer.batch_size` 注入 `source` 节点 Meta 推导，并在 `batch_size < 2` 时静态拦截 `BatchNorm2d`（`BATCH_SIZE_TOO_SMALL_FOR_BN`）及警告 `orthogonal` 正则退化（`DEGENERATE_ORTHOGONAL_REG_BS1`）；`trainer.py` 与 `runner.py` 解除单 Source 硬限制支持多 Source 协同训练；`BaseComponent.compute_metrics` + `CrossEntropyLoss.compute_metrics` 取代 `_extract_acc` 硬编码。
+- **AutoBridge 初始化与可观测性**：`EdgeIR` 新增 `bridge_init`/`bridge_bias_init`，`_AutoBridgeModule` 接入 `init_utils.apply_init()`；`AutoBridgePlan` 导出投影类型/维度/参数量，`runner.py` 推送 `bridge_stats` 权重与梯度范数；前端连线检查器支持切换 `bridge_init` 与一键「物化为独立 MatrixBridge 节点」。
+- **前端尺寸对齐与模块化**：修正 `NODE_W = 236` / `OUTPUT_NODE_W = 276` / `GROUP_NODE_W = 264` 与 `getNodeWidth()`，修复 `fitView()`/`renderMinimap()` 包围盒偏差；拆出 `netpulse/webui/static/probe_canvas.js` 并由 `server.py` 挂载 `/static`。
+- **验证**：新增 `tests/test_contracts_and_autobridge.py`、`tests/test_subgraph.py` 与 `tests/test_webui.py` 用例；`pytest tests -v` 34/35 通过（唯一失败为既有基线 `test_lstm_forecast_classic_and_templates_erc` 的 `peek_pred` KeyError）；`node --check` 与 `jsdom` 冒烟（物化 AutoBridge、多选封装、下钻、解散）零错误通过。

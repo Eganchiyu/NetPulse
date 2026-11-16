@@ -45,6 +45,24 @@ class CrossEntropyLoss(BaseComponent):
     def build(self, params: dict[str, Any], in_specs: dict[str, ResolvedSpec]) -> nn.Module:
         return _CrossEntropyModule()
 
+    def compute_metrics(
+        self,
+        params: dict[str, Any],
+        inputs: dict[str, Signal],
+    ) -> dict[str, tuple[float, int]]:
+        logits_sig = inputs.get("logits")
+        target_sig = inputs.get("target")
+        if logits_sig is None or target_sig is None:
+            return {}
+        logits = logits_sig.data
+        target = target_sig.data
+        if target.dtype not in (torch.int64, torch.int32):
+            return {}
+        if logits.ndim == 2 and target.ndim == 1 and logits.shape[0] == target.shape[0]:
+            correct = float((logits.argmax(dim=-1) == target.long()).sum().item())
+            return {"acc": (correct, int(target.shape[0]))}
+        return {}
+
 
 class _ActivationRegModule(nn.Module):
     """对隐层激活/投影特征施加可精确计算的正则化约束。"""

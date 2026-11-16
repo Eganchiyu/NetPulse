@@ -153,3 +153,5 @@ class GraphOutput:
     total_loss: Optional[torch.Tensor] = None
     # 反向梯度总线：key 为边 id，由 backward 期间触发的 Hook 填充（前向刚返回时为空）
     grad_bus: dict[str, torch.Tensor] = field(default_factory=dict)
+    # 节点级可扩展评估指标累加量，如 {"acc": (correct_sum, sample_count)}
+    metrics: dict[str, tuple[float, int]] = field(default_factory=dict)
